@@ -2,6 +2,10 @@ import os
 import json
 from pathlib import Path
 from pprint import pprint
+import matplotlib.pyplot as plt
+import numpy as np
+import tqdm
+import time
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -35,11 +39,11 @@ def list_all_jpgs(dir_path: Path):
     
     return list(filter(jpg_filter, jpgs_list))
 
-def generate_patients_original_mapping():
+def generate_patients_original_mapping() -> dict[str, dict]:
     original_patients_dirs = list(ORIGINAL_DATASET_PATH.iterdir())
     original_patients_dirs = list(filter(original_dataset_filter, original_patients_dirs))
 
-    patients = {}
+    patients_map = {}
 
     # IZQ - left side
     # DER - right side
@@ -68,17 +72,41 @@ def generate_patients_original_mapping():
             pass
 
         patient_dir_name_rel_str = str(patient_dir_name.relative_to(ORIGINAL_DATASET_PATH))
-        patients[patient_dir_name_rel_str] = {
-            "left": list(map(lambda p: str(p.relative_to(ORIGINAL_DATASET_PATH)), left_eyes_paths)),
-            "right": list(map(lambda p: str(p.relative_to(ORIGINAL_DATASET_PATH)), right_eyes_paths)),
+        patients_map[patient_dir_name_rel_str] = {
+            "left": list(map(lambda p: str(p.relative_to(patient_dir_path)), left_eyes_paths)),
+            "right": list(map(lambda p: str(p.relative_to(patient_dir_path)), right_eyes_paths)),
         }
 
-    patients_images_json = json.dumps(patients, indent=4)
+    return patients_map
+
+def save_patients_map(patients_map: dict[str, dict]):
+    patients_images_json = json.dumps(patients_map, indent=4)
     with open(PATIENTS_JSON_PATH, "w+") as f:
         f.write(patients_images_json)
+
+def load_our_images_to_memory(patients_map: dict[str, dict]) -> dict[Path, bytes]:
+    our_images_dir = OURS_DATASET_PATH / "images"
+    original_images_paths = []
+
+    for patient_id in patients_map.keys():
+        for image_path in (patients_map[patient_id]["left"] + patients_map[patient_id]["right"]):
+            original_images_paths.append(ORIGINAL_DATASET_PATH / patient_id / image_path)
+
+    our_images_paths = list(our_images_dir.iterdir())
+    our_images_bytes = {}
+
+    for our_image_path in tqdm.tqdm(our_images_paths, desc="loading our images"):
+        with open(our_image_path, "rb") as f:
+            our_image_bytes = f.read()
+        our_images_bytes[our_image_path] = our_image_bytes
+    
+    return our_images_bytes
 
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
         GENERATED_DIR_PATH.mkdir()
 
-    generate_patients_original_mapping()
+    patients_map = generate_patients_original_mapping()
+    save_patients_map(patients_map)
+    
+    our_images_bytes = load_our_images_to_memory(patients_map)
