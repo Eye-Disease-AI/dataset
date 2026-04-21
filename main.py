@@ -11,8 +11,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
 ORIGINAL_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-original"
 OURS_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-ours"
+OUR_IMAGES_DIR = OURS_DATASET_PATH / "images"
 GENERATED_DIR_PATH = DATA_BASE_PATH / "generated"
 PATIENTS_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
+OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
+ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 
 def original_dataset_filter(full_path: Path):
     name = full_path.name
@@ -84,15 +87,17 @@ def save_patients_map(patients_map: dict[str, dict]):
     with open(PATIENTS_JSON_PATH, "w+") as f:
         f.write(patients_images_json)
 
-def load_our_images_to_memory(patients_map: dict[str, dict]) -> dict[Path, bytes]:
-    our_images_dir = OURS_DATASET_PATH / "images"
+def get_original_images_paths(patients_map: dict[str, dict]) -> list[Path]:
     original_images_paths = []
 
     for patient_id in patients_map.keys():
         for image_path in (patients_map[patient_id]["left"] + patients_map[patient_id]["right"]):
             original_images_paths.append(ORIGINAL_DATASET_PATH / patient_id / image_path)
+    
+    return original_images_paths
 
-    our_images_paths = list(our_images_dir.iterdir())
+def load_our_images_to_memory() -> dict[Path, bytes]:
+    our_images_paths = list(OUR_IMAGES_DIR.iterdir())
     our_images_bytes = {}
 
     for our_image_path in tqdm.tqdm(our_images_paths, desc="loading our images"):
@@ -102,11 +107,42 @@ def load_our_images_to_memory(patients_map: dict[str, dict]) -> dict[Path, bytes
     
     return our_images_bytes
 
+def stringify_dict(d: dict[Path, Path]) -> dict[str, str]:
+    return {str(k): str(v) for k, v in d.items()}
+
+def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes]):
+    original_images_paths = get_original_images_paths(patients_map)
+    original_to_our = {}
+    our_to_original = {}
+
+    our_images_paths = list(OUR_IMAGES_DIR.iterdir())
+
+    for original_image_path in tqdm.tqdm(original_images_paths, desc="comparing images"):
+        with open(original_image_path, "rb") as f:
+            original_image_bytes = f.read()
+
+        for our_image_path in our_images_paths:
+            our_image_bytes = our_images_bytes[our_image_path]
+            are_identical = original_image_bytes == our_image_bytes
+
+            if are_identical:
+                original_to_our[original_image_path.relative_to(ORIGINAL_DATASET_PATH)] = our_image_path.relative_to(OURS_DATASET_PATH)
+                our_to_original[our_image_path.relative_to(OURS_DATASET_PATH)] = original_image_path.relative_to(ORIGINAL_DATASET_PATH)
+                our_images_paths.remove(our_image_path)
+                break
+
+    with open(OUR_TO_ORIGINAL_JSON_PATH, "w+") as f:
+        f.write(json.dumps(stringify_dict(our_to_original), indent=4))
+
+    with open(ORIGINAL_TO_OUR_JSON_PATH, "w+") as f:
+        f.write(json.dumps(stringify_dict(original_to_our), indent=4))
+
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
         GENERATED_DIR_PATH.mkdir()
 
     patients_map = generate_patients_original_mapping()
     save_patients_map(patients_map)
-    
-    our_images_bytes = load_our_images_to_memory(patients_map)
+
+    our_images_bytes = load_our_images_to_memory()
+    generate_our_to_original_mappings(our_images_bytes)
