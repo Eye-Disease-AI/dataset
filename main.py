@@ -1,11 +1,8 @@
 import os
 import json
 from pathlib import Path
-from pprint import pprint
-import matplotlib.pyplot as plt
-import numpy as np
 import tqdm
-import time
+from collections import defaultdict
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -16,6 +13,7 @@ GENERATED_DIR_PATH = DATA_BASE_PATH / "generated"
 PATIENTS_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
 OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
+PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 
 def original_dataset_filter(full_path: Path):
     name = full_path.name
@@ -107,10 +105,10 @@ def load_our_images_to_memory() -> dict[Path, bytes]:
     
     return our_images_bytes
 
-def stringify_dict(d: dict[Path, Path]) -> dict[str, str]:
+def stringify_path_dict(d: dict[Path, Path]) -> dict[str, str]:
     return {str(k): str(v) for k, v in d.items()}
 
-def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes]):
+def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes]) -> tuple[dict[Path, Path], dict[Path, Path]]:
     original_images_paths = get_original_images_paths(patients_map)
     original_to_our = {}
     our_to_original = {}
@@ -131,11 +129,28 @@ def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes]):
                 our_images_paths.remove(our_image_path)
                 break
 
-    with open(OUR_TO_ORIGINAL_JSON_PATH, "w+") as f:
-        f.write(json.dumps(stringify_dict(our_to_original), indent=4))
+    return original_to_our, our_to_original
 
+def save_our_to_original_mappings(original_to_our: dict[Path, Path], our_to_original: dict[Path, Path]):
     with open(ORIGINAL_TO_OUR_JSON_PATH, "w+") as f:
-        f.write(json.dumps(stringify_dict(original_to_our), indent=4))
+        f.write(json.dumps(stringify_path_dict(original_to_our), indent=4))
+
+    with open(OUR_TO_ORIGINAL_JSON_PATH, "w+") as f:
+        f.write(json.dumps(stringify_path_dict(our_to_original), indent=4))
+
+def generate_patients_ours_mapping(patients_map: dict[str, dict], original_to_our: dict[Path, Path]):
+    patients_ours = defaultdict(lambda: {
+        "left": [],
+        "right": [],
+    })
+
+    for patient_id in patients_map:
+        patient_path = Path(patient_id)
+        patients_ours[patient_id]["left"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_map[patient_id]["left"]))
+        patients_ours[patient_id]["right"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_map[patient_id]["right"]))
+
+    with open(PATIENTS_OURS_JSON_PATH, "w+") as f:
+        f.write(json.dumps(patients_ours, indent=4))
 
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
@@ -145,4 +160,6 @@ if __name__ == "__main__":
     save_patients_map(patients_map)
 
     our_images_bytes = load_our_images_to_memory()
-    generate_our_to_original_mappings(our_images_bytes)
+    original_to_our, our_to_original = generate_our_to_original_mappings(our_images_bytes)
+    save_our_to_original_mappings(original_to_our, our_to_original)
+    generate_patients_ours_mapping(patients_map, original_to_our)
