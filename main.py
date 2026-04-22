@@ -1,3 +1,4 @@
+import copy
 from errno import EPERM
 from itertools import count
 from math import log
@@ -56,6 +57,10 @@ class SubsetSplitter:
         self.val_classes_counts = [0, 0]
         self.test_classes_counts = [0, 0]
 
+        # Sum of probability distributions of datapacks in given subset
+        self.subset_entropy_desired_props = [1/3, 1/3, 1/3]
+        self.subset_entropy_sums = [0.0, 0.0, 0.0]
+
         for pack in self.full_set:
             self.__add_pack(pack)
 
@@ -68,6 +73,9 @@ class SubsetSplitter:
 
     def get_full_size(self) -> int:
         return len(self.train_set) + len(self.val_set) + len(self.test_set)
+
+    def get_subset_entropy_props(self) -> list:
+        return self.__probabilize(self.subset_entropy_sums)
 
     def get_subset_sizes_props(self) -> list:
         full_size = float(self.get_full_size())
@@ -109,19 +117,26 @@ class SubsetSplitter:
 
     def __add_pack(self, count_pack: dict):
         set_name = self.__where_best(count_pack)
+        pack_entropy = entropy([
+            count_pack["cataracts_count"],
+            count_pack["non_cataracts_count"],
+        ])
 
         if set_name == "train":
             self.train_set.extend(count_pack["pack"])
             self.train_classes_counts[0] += count_pack["cataracts_count"]
             self.train_classes_counts[1] += count_pack["non_cataracts_count"]
+            self.subset_entropy_sums[0] += pack_entropy
         elif set_name == "val":
             self.val_set.extend(count_pack["pack"])
             self.val_classes_counts[0] += count_pack["cataracts_count"]
             self.val_classes_counts[1] += count_pack["non_cataracts_count"]
+            self.subset_entropy_sums[1] += pack_entropy
         else:
             self.test_set.extend(count_pack["pack"])
             self.test_classes_counts[0] += count_pack["cataracts_count"]
             self.test_classes_counts[1] += count_pack["non_cataracts_count"]
+            self.subset_entropy_sums[2] += pack_entropy
 
     # ASSUMPTION: Subset balance equal to whole dataset balance is desired
     def __where_best(self, count_pack: dict):
@@ -179,18 +194,43 @@ class SubsetSplitter:
 
         subset_sizes_improv = cur_subset_props_ce - new_subset_props_ce
 
-        return (class_props_improv + subset_sizes_improv) / 2
+        cur_entropy_props = self.get_subset_entropy_props()
+        new_entropy_sums = self.subset_entropy_sums[:]
+        new_entropy_sums[subset_idx] += count_pack["labels_entropy"]
+        new_entropy_props = self.__probabilize(new_entropy_sums)
+
+        cur_subset_entropy_props_ce = SubsetSplitter.__ce_props(
+            cur_entropy_props,
+            self.subset_entropy_desired_props,
+        )
+        new_subset_entropy_props_ce = SubsetSplitter.__ce_props(
+            new_entropy_props,
+            self.subset_entropy_desired_props,
+        )
+
+        subset_entropy_props_improv = cur_subset_entropy_props_ce - new_subset_entropy_props_ce
+
+        return (class_props_improv + subset_sizes_improv + subset_entropy_props_improv) / 2
 
     @staticmethod
-    def __ce(q_counts: list, p_counts: list) -> float:
-        Q = [float(q) / (sum(q_counts) + SubsetSplitter.EPSILON) for q in q_counts]
-        P = [float(p) / (sum(p_counts) + SubsetSplitter.EPSILON) for p in p_counts]
+    def __ce_props(Q: list[float], P: list[float]) -> float:
         result = 0.0
 
         for q, p in zip(Q, P):
             result += -p * log(q + SubsetSplitter.EPSILON)
 
         return result
+
+    @staticmethod
+    def __ce(q_counts: list, p_counts: list) -> float:
+        Q = [float(q) / (sum(q_counts) + SubsetSplitter.EPSILON) for q in q_counts]
+        P = [float(p) / (sum(p_counts) + SubsetSplitter.EPSILON) for p in p_counts]
+
+        return SubsetSplitter.__ce_props(Q, P)
+
+    @staticmethod
+    def __probabilize(p_counts: list) -> list[float]:
+        return [float(p) / (sum(p_counts) + SubsetSplitter.EPSILON) for p in p_counts]
 
 def original_dataset_filter(full_path: Path):
     name = full_path.name
@@ -359,6 +399,18 @@ def load_unlabeled_packs(patients_ours_map: dict[str, dict]):
 
     return datapacks
 
+def entropy(p_counts: list[int]) -> float:
+    total = sum(p_counts)
+    result = 0.0
+
+    for count in p_counts:
+        if count == 0:
+            continue
+        p = count / total
+        result -= p * log(p)
+
+    return result
+
 def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
     packs_counted = []
 
@@ -386,6 +438,7 @@ def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
             "pack": pack_filtered,
             "cataracts_count": cataracts_count,
             "non_cataracts_count": non_cataracts_count,
+            "labels_entropy": entropy([cataracts_count, non_cataracts_count]),
         })
     
     return packs_counted
@@ -416,3 +469,6 @@ if __name__ == "__main__":
 
     print("Props (actual):", ss.get_subset_sizes_props())
     print("Props (desired):", ss.get_subset_sizes_desired_props())
+
+    print("Hard examples / entropy (actual):", ss.get_subset_entropy_props())
+    print("Hard examples / entropy (desired):", ss.subset_entropy_desired_props)
