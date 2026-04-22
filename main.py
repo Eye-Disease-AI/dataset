@@ -140,7 +140,7 @@ def save_our_to_original_mappings(original_to_our: dict[Path, Path], our_to_orig
     with open(OUR_TO_ORIGINAL_JSON_PATH, "w+") as f:
         f.write(json.dumps(stringify_path_dict(our_to_original), indent=4))
 
-def generate_patients_ours_mapping(patients_original_map: dict[str, dict], original_to_our: dict[Path, Path]):
+def generate_patients_ours_mapping(patients_original_map: dict[str, dict], original_to_our: dict[Path, Path]) -> dict[str, dict]:
     patients_ours = defaultdict(lambda: {
         "left": [],
         "right": [],
@@ -184,6 +184,37 @@ def load_unlabeled_packs(patients_ours_map: dict[str, dict]):
 
     return datapacks
 
+def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
+    packs_counted = []
+
+    print(labels_df)
+
+    for pack in datapacks:
+        pack_labels = []
+        pack_filtered = []
+
+        for image_path in pack:
+            image_path = Path(image_path)
+            try:
+                image_label = get_label_of(labels_df, image_path.name)
+                pack_filtered.append(image_path)
+                pack_labels.append(image_label)
+            except:
+                pass
+
+        cataract_label = "Zaćma"
+        non_cataract_label = "Brak Zaćmy"
+        cataracts_count = pack_labels.count(cataract_label)
+        non_cataracts_count = pack_labels.count(non_cataract_label)
+
+        packs_counted.append({
+            "pack": pack_filtered,
+            "cataracts_count": cataracts_count,
+            "non_cataracts_count": non_cataracts_count,
+        })
+    
+    return packs_counted
+
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
         GENERATED_DIR_PATH.mkdir()
@@ -196,5 +227,8 @@ if __name__ == "__main__":
     save_our_to_original_mappings(original_to_our, our_to_original)
     patients_ours_map = generate_patients_ours_mapping(patients_original_map, original_to_our)
     save_patients_ours_mapping(patients_ours_map)
-    load_clean_labels()
-    load_unlabeled_packs(patients_ours_map)
+    labels_df = load_clean_labels()
+    datapacks = load_unlabeled_packs(patients_ours_map)
+    datapacks_counted = count_packs(datapacks, labels_df)
+    from pprint import pprint
+    pprint(datapacks_counted[3])
