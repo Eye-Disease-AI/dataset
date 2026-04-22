@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tqdm
 from collections import defaultdict
+import json
+import pandas as pd
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -10,7 +12,7 @@ ORIGINAL_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-original"
 OURS_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-ours"
 OUR_IMAGES_DIR = OURS_DATASET_PATH / "images"
 GENERATED_DIR_PATH = DATA_BASE_PATH / "generated"
-PATIENTS_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
+PATIENTS_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
 OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
@@ -34,7 +36,7 @@ def jpg_filter(full_path: Path):
 def list_all_jpgs(dir_path: Path):
     jpgs_list = []
 
-    for root, dirs, files in os.walk(dir_path):
+    for root, _, files in os.walk(dir_path):
         for file in files:
             jpgs_list.append(Path(root) / Path(file))
     
@@ -80,16 +82,16 @@ def generate_patients_original_mapping() -> dict[str, dict]:
 
     return patients_map
 
-def save_patients_map(patients_map: dict[str, dict]):
-    patients_images_json = json.dumps(patients_map, indent=4)
-    with open(PATIENTS_JSON_PATH, "w+") as f:
+def save_patients_original_mapping(patients_original_map: dict[str, dict]):
+    patients_images_json = json.dumps(patients_original_map, indent=4)
+    with open(PATIENTS_ORIGINAL_JSON_PATH, "w+") as f:
         f.write(patients_images_json)
 
-def get_original_images_paths(patients_map: dict[str, dict]) -> list[Path]:
+def get_original_images_paths(patients_original_map: dict[str, dict]) -> list[Path]:
     original_images_paths = []
 
-    for patient_id in patients_map.keys():
-        for image_path in (patients_map[patient_id]["left"] + patients_map[patient_id]["right"]):
+    for patient_id in patients_original_map.keys():
+        for image_path in (patients_original_map[patient_id]["left"] + patients_original_map[patient_id]["right"]):
             original_images_paths.append(ORIGINAL_DATASET_PATH / patient_id / image_path)
     
     return original_images_paths
@@ -108,8 +110,8 @@ def load_our_images_to_memory() -> dict[Path, bytes]:
 def stringify_path_dict(d: dict[Path, Path]) -> dict[str, str]:
     return {str(k): str(v) for k, v in d.items()}
 
-def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes]) -> tuple[dict[Path, Path], dict[Path, Path]]:
-    original_images_paths = get_original_images_paths(patients_map)
+def generate_our_to_original_mappings(our_images_bytes: dict[Path, bytes], patients_original_map: dict[str, dict]) -> tuple[dict[Path, Path], dict[Path, Path]]:
+    original_images_paths = get_original_images_paths(patients_original_map)
     original_to_our = {}
     our_to_original = {}
 
@@ -138,28 +140,61 @@ def save_our_to_original_mappings(original_to_our: dict[Path, Path], our_to_orig
     with open(OUR_TO_ORIGINAL_JSON_PATH, "w+") as f:
         f.write(json.dumps(stringify_path_dict(our_to_original), indent=4))
 
-def generate_patients_ours_mapping(patients_map: dict[str, dict], original_to_our: dict[Path, Path]):
+def generate_patients_ours_mapping(patients_original_map: dict[str, dict], original_to_our: dict[Path, Path]):
     patients_ours = defaultdict(lambda: {
         "left": [],
         "right": [],
     })
 
-    for patient_id in patients_map:
+    for patient_id in patients_original_map:
         patient_path = Path(patient_id)
-        patients_ours[patient_id]["left"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_map[patient_id]["left"]))
-        patients_ours[patient_id]["right"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_map[patient_id]["right"]))
+        patients_ours[patient_id]["left"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_original_map[patient_id]["left"]))
+        patients_ours[patient_id]["right"] = list(map(lambda s: str(original_to_our[patient_path / s]), patients_original_map[patient_id]["right"]))
 
+    return patients_ours
+
+def save_patients_ours_mapping(patients_ours_map: dict[str, dict]):
     with open(PATIENTS_OURS_JSON_PATH, "w+") as f:
-        f.write(json.dumps(patients_ours, indent=4))
+        f.write(json.dumps(patients_ours_map, indent=4))
+
+def load_clean_labels():
+    labels_df = pd.read_json(OURS_DATASET_PATH / "labels.json")
+    labels_df = labels_df.dropna(subset=["choice"])
+    labels_df = labels_df[labels_df["choice"].map(lambda x: x not in ["Zdjęcie nieczytelne", "Inne choroby"])]
+    labels_df["choice"] = labels_df["choice"].apply(lambda x: "Brak Zaćmy" if x == "Zdrowe" else x).copy() # type: ignore
+    labels_df["image"] = labels_df["image"].apply(lambda x: os.path.basename(x)).copy() # type: ignore
+
+    return labels_df
+
+def get_label_of(labels_df: pd.DataFrame, image_path: str):
+    return labels_df[labels_df["image"] == image_path]["choice"].item()
+
+def load_unlabeled_packs(patients_ours_map: dict[str, dict]):
+    datapacks = []
+
+    for patient_id in patients_ours_map:
+        patient = patients_ours_map[patient_id]
+        left_eye = patient["left"]
+        right_eye = patient["right"]
+
+        if len(left_eye) != 0:
+            datapacks.append(left_eye)
+        if len(right_eye) != 0:
+            datapacks.append(right_eye)
+
+    return datapacks
 
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
         GENERATED_DIR_PATH.mkdir()
 
-    patients_map = generate_patients_original_mapping()
-    save_patients_map(patients_map)
+    patients_original_map = generate_patients_original_mapping()
+    save_patients_original_mapping(patients_original_map)
 
     our_images_bytes = load_our_images_to_memory()
-    original_to_our, our_to_original = generate_our_to_original_mappings(our_images_bytes)
+    original_to_our, our_to_original = generate_our_to_original_mappings(our_images_bytes, patients_original_map)
     save_our_to_original_mappings(original_to_our, our_to_original)
-    generate_patients_ours_mapping(patients_map, original_to_our)
+    patients_ours_map = generate_patients_ours_mapping(patients_original_map, original_to_our)
+    save_patients_ours_mapping(patients_ours_map)
+    load_clean_labels()
+    load_unlabeled_packs(patients_ours_map)
