@@ -17,6 +17,95 @@ OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 
+class SubsetSplitter:
+    EPSILON = 1e-9
+
+    def __init__(
+        self,
+        all_count_packs: list,
+        desired_train_size: float,
+        desired_val_size: float
+    ):
+        self.desired_train_size = desired_train_size
+        self.desired_val_size = desired_val_size
+        self.desired_test_size = 1.0 - self.desired_train_size - self.desired_val_size
+
+        self.full_set = all_count_packs
+
+        self.cataracts_count = 0
+        self.non_cataracts_count = 0
+
+        for pack in self.full_set:
+            self.cataracts_count += pack["cataracts_count"]
+            self.non_cataracts_count += pack["non_cataracts_count"]
+
+        self.train_set = []
+        self.val_set = []
+        self.test_set = []
+
+        # ASSUMPTION: 2 classes in the dataset
+        self.train_classes_counts = [0, 0]
+        self.val_classes_counts = [0, 0]
+        self.test_classes_counts = [0, 0]
+
+        for pack in self.full_set:
+            self.__add_pack(pack)
+
+    def get_subset_sizes(self) -> list:
+        return [
+            len(self.train_set),
+            len(self.val_set),
+            len(self.test_set),
+        ]
+
+    def __add_pack(self, count_pack: dict):
+        set_name = self.__where_best(count_pack)
+
+        if set_name == "train":
+            self.train_set.extend(count_pack["pack"])
+            self.train_classes_counts[0] += count_pack["cataracts_count"]
+            self.train_classes_counts[1] += count_pack["non_cataracts_count"]
+        elif set_name == "val":
+            self.val_set.extend(count_pack["pack"])
+            self.val_classes_counts[0] += count_pack["cataracts_count"]
+            self.val_classes_counts[1] += count_pack["non_cataracts_count"]
+        else:
+            self.test_set.extend(count_pack["pack"])
+            self.test_classes_counts[0] += count_pack["cataracts_count"]
+            self.test_classes_counts[1] += count_pack["non_cataracts_count"]
+
+    # ASSUMPTION: Subset balance equal to whole dataset balance is desired
+    def __where_best(self, count_pack: dict):
+        full_set_bal = self.cataracts_count / (self.non_cataracts_count + self.EPSILON)
+        train_set_bal = self.train_classes_counts[0] / (self.train_classes_counts[1] + self.EPSILON)
+        val_set_bal = self.val_classes_counts[0] / (self.val_classes_counts[1] + self.EPSILON)
+        test_set_bal = self.test_classes_counts[0] / (self.test_classes_counts[1] + self.EPSILON)
+
+        train_set_improv = SubsetSplitter.__calc_improv(
+            self.train_classes_counts, count_pack, train_set_bal, full_set_bal
+        )
+        val_set_improv = SubsetSplitter.__calc_improv(
+            self.val_classes_counts, count_pack, val_set_bal, full_set_bal
+        )
+        test_set_improv = SubsetSplitter.__calc_improv(
+            self.test_classes_counts, count_pack, test_set_bal, full_set_bal
+        )
+
+        print(train_set_improv, val_set_improv, test_set_improv)
+
+        if train_set_improv > val_set_improv and train_set_improv > test_set_improv:
+            return "train"
+        elif val_set_improv > train_set_improv and val_set_improv > test_set_improv:
+            return "val"
+        else:
+            return "test"
+
+    @staticmethod
+    def __calc_improv(classes_counts: list, count_pack: dict, curr_subset_bal: float, full_set_bal: float):
+        new_bal = (classes_counts[0] + count_pack["cataracts_count"]) \
+            / (classes_counts[1] + count_pack["non_cataracts_count"] + SubsetSplitter.EPSILON)
+        return abs(full_set_bal - curr_subset_bal) - abs(full_set_bal - new_bal)
+
 def original_dataset_filter(full_path: Path):
     name = full_path.name
     not_xslx = not name.endswith(".xlsx")
@@ -230,5 +319,6 @@ if __name__ == "__main__":
     labels_df = load_clean_labels()
     datapacks = load_unlabeled_packs(patients_ours_map)
     datapacks_counted = count_packs(datapacks, labels_df)
-    from pprint import pprint
-    pprint(datapacks_counted[3])
+    
+    ss = SubsetSplitter(datapacks_counted, 0.7, 0.2)
+    print(ss.get_subset_sizes())
