@@ -1,10 +1,15 @@
+from itertools import count
+from math import log
 import os
 import json
 from pathlib import Path
+from re import sub
+from numpy import full
 import tqdm
 from collections import defaultdict
 import json
 import pandas as pd
+import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -39,6 +44,8 @@ class SubsetSplitter:
             self.cataracts_count += pack["cataracts_count"]
             self.non_cataracts_count += pack["non_cataracts_count"]
 
+        self.full_set_classes_counts = [self.cataracts_count, self.non_cataracts_count]
+
         self.train_set = []
         self.val_set = []
         self.test_set = []
@@ -56,6 +63,14 @@ class SubsetSplitter:
             len(self.train_set),
             len(self.val_set),
             len(self.test_set),
+        ]
+
+    def get_subset_class_props(self) -> list:
+        return [
+            float(self.full_set_classes_counts[0]) / sum(self.full_set_classes_counts),
+            float(self.train_classes_counts[0]) / sum(self.train_classes_counts),
+            float(self.val_classes_counts[0]) / sum(self.val_classes_counts),
+            float(self.test_classes_counts[0]) / sum(self.test_classes_counts),
         ]
 
     def __add_pack(self, count_pack: dict):
@@ -76,35 +91,48 @@ class SubsetSplitter:
 
     # ASSUMPTION: Subset balance equal to whole dataset balance is desired
     def __where_best(self, count_pack: dict):
-        full_set_bal = self.cataracts_count / (self.non_cataracts_count + self.EPSILON)
-        train_set_bal = self.train_classes_counts[0] / (self.train_classes_counts[1] + self.EPSILON)
-        val_set_bal = self.val_classes_counts[0] / (self.val_classes_counts[1] + self.EPSILON)
-        test_set_bal = self.test_classes_counts[0] / (self.test_classes_counts[1] + self.EPSILON)
-
         train_set_improv = SubsetSplitter.__calc_improv(
-            self.train_classes_counts, count_pack, train_set_bal, full_set_bal
+            self.train_classes_counts, self.full_set_classes_counts, count_pack
         )
         val_set_improv = SubsetSplitter.__calc_improv(
-            self.val_classes_counts, count_pack, val_set_bal, full_set_bal
+            self.val_classes_counts, self.full_set_classes_counts, count_pack
         )
         test_set_improv = SubsetSplitter.__calc_improv(
-            self.test_classes_counts, count_pack, test_set_bal, full_set_bal
+            self.test_classes_counts, self.full_set_classes_counts, count_pack
         )
 
-        print(train_set_improv, val_set_improv, test_set_improv)
+        names = ["train", "val", "test"]
+        am = np.argmax([train_set_improv, val_set_improv, test_set_improv])
 
-        if train_set_improv > val_set_improv and train_set_improv > test_set_improv:
-            return "train"
-        elif val_set_improv > train_set_improv and val_set_improv > test_set_improv:
-            return "val"
-        else:
-            return "test"
+        return names[am]
 
     @staticmethod
-    def __calc_improv(classes_counts: list, count_pack: dict, curr_subset_bal: float, full_set_bal: float):
-        new_bal = (classes_counts[0] + count_pack["cataracts_count"]) \
-            / (classes_counts[1] + count_pack["non_cataracts_count"] + SubsetSplitter.EPSILON)
-        return abs(full_set_bal - curr_subset_bal) - abs(full_set_bal - new_bal)
+    def __calc_improv(
+        subset_classes_counts: list,
+        full_set_classes_counts: list,
+        count_pack: dict,
+    ):
+        curr_ce = SubsetSplitter.__ce(subset_classes_counts, full_set_classes_counts)
+        new_ce = SubsetSplitter.__ce([
+            subset_classes_counts[0] + count_pack["cataracts_count"],
+            subset_classes_counts[1] + count_pack["non_cataracts_count"],
+        ], full_set_classes_counts)
+
+        return curr_ce - new_ce
+
+    @staticmethod
+    def __ce(subset_classes_counts: list, full_set_classes_counts: list) -> float:
+        subset_p = [
+            subset_classes_counts[0] / (subset_classes_counts[0] + subset_classes_counts[1] + SubsetSplitter.EPSILON),
+            subset_classes_counts[1] / (subset_classes_counts[0] + subset_classes_counts[1] + SubsetSplitter.EPSILON),
+        ]
+
+        full_p = [
+            full_set_classes_counts[0] / (full_set_classes_counts[0] + full_set_classes_counts[1] + SubsetSplitter.EPSILON),
+            full_set_classes_counts[1] / (full_set_classes_counts[0] + full_set_classes_counts[1] + SubsetSplitter.EPSILON),
+        ]
+
+        return -full_p[0] * log(subset_p[0] + SubsetSplitter.EPSILON) - full_p[1] * log(subset_p[1] + SubsetSplitter.EPSILON)
 
 def original_dataset_filter(full_path: Path):
     name = full_path.name
@@ -322,3 +350,4 @@ if __name__ == "__main__":
     
     ss = SubsetSplitter(datapacks_counted, 0.7, 0.2)
     print(ss.get_subset_sizes())
+    print(ss.get_subset_class_props())
