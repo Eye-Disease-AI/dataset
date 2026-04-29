@@ -13,6 +13,7 @@ from collections import defaultdict
 import json
 import pandas as pd
 import numpy as np
+import argparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -401,10 +402,7 @@ def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
     
     return packs_counted
 
-if __name__ == "__main__":
-    if not GENERATED_DIR_PATH.exists():
-        GENERATED_DIR_PATH.mkdir()
-
+def run_mode_initial(subsets_props: list[float]):
     patients_original_map = generate_patients_original_mapping()
     save_patients_original_mapping(patients_original_map)
 
@@ -417,7 +415,7 @@ if __name__ == "__main__":
     datapacks = load_unlabeled_packs(patients_ours_map)
     datapacks_counted = count_packs(datapacks, labels_df)
     
-    ss = SubsetSplitter(datapacks_counted, [0.7, 0.2, 0.05, 0.05])
+    ss = SubsetSplitter(datapacks_counted, subsets_props)
 
     print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
     print("Subset sizes:", ss.get_subset_sizes_counts())
@@ -430,3 +428,23 @@ if __name__ == "__main__":
 
     print("Hard examples / entropy (actual):", ss.get_subset_entropy_props())
     print("Hard examples / entropy (desired):", ss.subset_entropy_desired_props)
+
+def run_mode_kfoldcv():
+    pass
+
+if __name__ == "__main__":
+    if not GENERATED_DIR_PATH.exists():
+        GENERATED_DIR_PATH.mkdir()
+
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+
+    group.add_argument('-initial', nargs=3, metavar=("train", "val", "test"), type=float)
+    group.add_argument('-kfoldcv', type=int, metavar="k")
+
+    args = parser.parse_args()
+
+    if args.initial is not None:
+        run_mode_initial(args.initial)
+    elif args.kfoldcv is not None:
+        run_mode_kfoldcv()
