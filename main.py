@@ -1,6 +1,7 @@
 import copy
 from errno import EPERM
 from itertools import count
+import functools
 from math import log
 import os
 import json
@@ -30,12 +31,9 @@ class SubsetSplitter:
     def __init__(
         self,
         all_count_packs: list,
-        desired_train_prop: float,
-        desired_val_prop: float
+        desired_props: list[float],
     ):
-        self.desired_train_prop = desired_train_prop
-        self.desired_val_prop = desired_val_prop
-        self.desired_test_prop = 1.0 - self.desired_train_prop - self.desired_val_prop
+        self.desired_props = desired_props
 
         self.full_set = all_count_packs
 
@@ -48,116 +46,83 @@ class SubsetSplitter:
 
         self.full_set_classes_counts = [self.cataracts_count, self.non_cataracts_count]
 
-        self.train_set = []
-        self.val_set = []
-        self.test_set = []
+        self.subsets = [[] for _ in desired_props]
 
         # ASSUMPTION: 2 classes in the dataset
-        self.train_classes_counts = [0, 0]
-        self.val_classes_counts = [0, 0]
-        self.test_classes_counts = [0, 0]
+        self.subsets_classes_counts = [[0, 0] for _ in self.subsets]
 
         # Sum of probability distributions of datapacks in given subset
-        self.subset_entropy_desired_props = [1/3, 1/3, 1/3]
-        self.subset_entropy_sums = [0.0, 0.0, 0.0]
+        self.subset_entropy_desired_props = [1.0/len(self.subsets) for _ in self.subsets]
+        self.subset_entropy_sums = [0.0 for _ in self.subsets]
 
         for pack in self.full_set:
             self.__add_pack(pack)
 
     def get_subset_sizes_counts(self) -> list:
-        return [
-            len(self.train_set),
-            len(self.val_set),
-            len(self.test_set),
-        ]
+        return [len(subset) for subset in self.subsets]
 
     def get_full_size(self) -> int:
-        return len(self.train_set) + len(self.val_set) + len(self.test_set)
+        return functools.reduce(lambda acc, x: acc + len(x), self.subsets, 0)
 
     def get_subset_entropy_props(self) -> list:
         return self.__probabilize(self.subset_entropy_sums)
 
     def get_subset_sizes_props(self) -> list:
         full_size = float(self.get_full_size())
-        return [
-            len(self.train_set) / full_size,
-            len(self.val_set) / full_size,
-            len(self.test_set) / full_size,
-        ]
+        return [len(subset)/full_size for subset in self.subsets]
 
     def get_subset_sizes_desired_props(self) -> list:
-        return [
-            self.desired_train_prop,
-            self.desired_val_prop,
-            self.desired_test_prop,
-        ]
+        return self.desired_props
 
     def get_subset_sizes_desired_counts(self) -> list:
         full_size = self.get_full_size()
-        desired_train_count = int(self.desired_train_prop * full_size)
-        desired_val_count = int(self.desired_val_prop * full_size)
-        desired_test_count = full_size - desired_train_count - desired_val_count
-        return [
-            desired_train_count,
-            desired_val_count,
-            desired_test_count,
-        ]
+        result = [int(prop * full_size) for prop in self.desired_props]
+        rest = full_size - sum(result)
+
+        # Split out leftovers resulting from float inaccuracy
+        for i in range(len(result)):
+            if rest == 0:
+                break
+            result[i] += 1
+            rest -= 1
+
+        return result
 
     def get_subset_class_props(self) -> list:
-        return [
-            float(self.train_classes_counts[0]) / sum(self.train_classes_counts),
-            float(self.val_classes_counts[0]) / sum(self.val_classes_counts),
-            float(self.test_classes_counts[0]) / sum(self.test_classes_counts),
-        ]
+        return [float(counts[0])/sum(counts) for counts in self.subsets_classes_counts]
 
     def get_subset_class_desired_props(self) -> list:
         return [
             float(self.full_set_classes_counts[0]) / sum(self.full_set_classes_counts),
-        ]*3
+        ]*len(self.subsets)
 
     def __add_pack(self, count_pack: dict):
-        set_name = self.__where_best(count_pack)
+        subset_idx = self.__where_best(count_pack)
         pack_entropy = entropy([
             count_pack["cataracts_count"],
             count_pack["non_cataracts_count"],
         ])
 
-        if set_name == "train":
-            self.train_set.extend(count_pack["pack"])
-            self.train_classes_counts[0] += count_pack["cataracts_count"]
-            self.train_classes_counts[1] += count_pack["non_cataracts_count"]
-            self.subset_entropy_sums[0] += pack_entropy
-        elif set_name == "val":
-            self.val_set.extend(count_pack["pack"])
-            self.val_classes_counts[0] += count_pack["cataracts_count"]
-            self.val_classes_counts[1] += count_pack["non_cataracts_count"]
-            self.subset_entropy_sums[1] += pack_entropy
-        else:
-            self.test_set.extend(count_pack["pack"])
-            self.test_classes_counts[0] += count_pack["cataracts_count"]
-            self.test_classes_counts[1] += count_pack["non_cataracts_count"]
-            self.subset_entropy_sums[2] += pack_entropy
+        self.subsets[subset_idx].extend(count_pack["pack"])
+        self.subsets_classes_counts[subset_idx][0] += count_pack["cataracts_count"]
+        self.subsets_classes_counts[subset_idx][1] += count_pack["non_cataracts_count"]
+        self.subset_entropy_sums[subset_idx] += pack_entropy
 
     # ASSUMPTION: Subset balance equal to whole dataset balance is desired
-    def __where_best(self, count_pack: dict):
-        train_set_improv = self.__calc_improv(
-            "train", self.train_classes_counts, self.full_set_classes_counts, count_pack
-        )
-        val_set_improv = self.__calc_improv(
-            "val", self.val_classes_counts, self.full_set_classes_counts, count_pack
-        )
-        test_set_improv = self.__calc_improv(
-            "test", self.test_classes_counts, self.full_set_classes_counts, count_pack
-        )
+    def __where_best(self, count_pack: dict) -> int:
+        improvs = []
 
-        names = ["train", "val", "test"]
-        am = np.argmax([train_set_improv, val_set_improv, test_set_improv])
+        for i, counts in enumerate(self.subsets_classes_counts):
+            improv = self.__calc_improv(
+                i, counts, self.full_set_classes_counts, count_pack
+            )
+            improvs.append(improv)
 
-        return names[am]
+        return int(np.argmax(improvs))
 
     def __calc_improv(
         self,
-        subset_name: str,
+        subset_idx: int,
         subset_classes_counts: list,
         full_set_classes_counts: list,
         count_pack: dict,
@@ -172,13 +137,6 @@ class SubsetSplitter:
 
         cur_counts = self.get_subset_sizes_counts()
         subset_size = sum(subset_classes_counts)
-
-        if subset_name == "train":
-            subset_idx = 0
-        elif subset_name == "val":
-            subset_idx = 1
-        else:
-            subset_idx = 2
 
         new_counts = self.get_subset_sizes_counts()
         new_counts[subset_idx] += subset_size
@@ -459,7 +417,7 @@ if __name__ == "__main__":
     datapacks = load_unlabeled_packs(patients_ours_map)
     datapacks_counted = count_packs(datapacks, labels_df)
     
-    ss = SubsetSplitter(datapacks_counted, 0.7, 0.2)
+    ss = SubsetSplitter(datapacks_counted, [0.7, 0.2, 0.05, 0.05])
 
     print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
     print("Subset sizes:", ss.get_subset_sizes_counts())
