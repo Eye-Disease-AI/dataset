@@ -434,7 +434,7 @@ def generate_split_mapping(labels_df, subsets: list[list]):
 
 def save_split_mapping(split_mapping):
     with open(SPLIT_JSON_PATH, "w+") as f:
-        f.write(json.dumps(split_mapping, indent=4))
+        f.write(json.dumps(split_mapping, indent=4, ensure_ascii=False))
 
 def run_mode_initial(subsets_props: list[float]):
     patients_original_map = generate_patients_original_mapping()
