@@ -25,6 +25,7 @@ PATIENTS_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
 OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
+SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 
 class SubsetSplitter:
     EPSILON = 1e-9
@@ -402,6 +403,30 @@ def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
     
     return packs_counted
 
+def generate_split_mapping(labels_df, subsets: list[list]):
+    result = {
+        "trainvalSet": [],
+        "testSet": [],
+    }
+
+    for img in (subsets[0] + subsets[1]):
+        result["trainvalSet"].append({
+            "path": img.name,
+            "label": get_label_of(labels_df, img.name),
+        })
+
+    for img in subsets[2]:
+        result["testSet"].append({
+            "path": img.name,
+            "label": get_label_of(labels_df, img.name),
+        })
+
+    return result
+
+def save_split_mapping(split_mapping):
+    with open(SPLIT_JSON_PATH, "w+") as f:
+        f.write(json.dumps(split_mapping, indent=4))
+
 def run_mode_initial(subsets_props: list[float]):
     patients_original_map = generate_patients_original_mapping()
     save_patients_original_mapping(patients_original_map)
@@ -416,6 +441,8 @@ def run_mode_initial(subsets_props: list[float]):
     datapacks_counted = count_packs(datapacks, labels_df)
     
     ss = SubsetSplitter(datapacks_counted, subsets_props)
+    sm = generate_split_mapping(labels_df, ss.subsets)
+    save_split_mapping(sm)
 
     print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
     print("Subset sizes:", ss.get_subset_sizes_counts())
