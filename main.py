@@ -436,7 +436,7 @@ def generate_split_mapping(labels_df, subsets: list[list], subsets_names: list[s
         result[subset_name] = []
         for pack in subset:
             result[subset_name].append([
-                {"path": img.name, "label": get_label_of(labels_df, img.name)}
+                {"path": str(img), "label": get_label_of(labels_df, img.name)}
                 for img in pack["pack"]
             ])
 
