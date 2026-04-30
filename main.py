@@ -61,17 +61,26 @@ class SubsetSplitter:
             self.__add_pack(pack)
 
     def get_subset_sizes_counts(self) -> list:
-        return [len(subset) for subset in self.subsets]
+        result = []
+
+        for subset in self.subsets:
+            subset_size = 0
+            for pack in subset:
+                subset_size += len(pack["pack"])
+            result.append(subset_size)
+
+        return result
 
     def get_full_size(self) -> int:
-        return functools.reduce(lambda acc, x: acc + len(x), self.subsets, 0)
+        return sum(self.get_subset_sizes_counts())
 
     def get_subset_entropy_props(self) -> list:
         return self.__probabilize(self.subset_entropy_sums)
 
     def get_subset_sizes_props(self) -> list:
-        full_size = float(self.get_full_size())
-        return [len(subset)/full_size for subset in self.subsets]
+        subset_sizes = self.get_subset_sizes_counts()
+        full_size = float(sum(subset_sizes))
+        return [s/full_size for s in subset_sizes]
 
     def get_subset_sizes_desired_props(self) -> list:
         return self.desired_props
@@ -105,7 +114,7 @@ class SubsetSplitter:
             count_pack["non_cataracts_count"],
         ])
 
-        self.subsets[subset_idx].extend(count_pack["pack"])
+        self.subsets[subset_idx].append(count_pack)
         self.subsets_classes_counts[subset_idx][0] += count_pack["cataracts_count"]
         self.subsets_classes_counts[subset_idx][1] += count_pack["non_cataracts_count"]
         self.subset_entropy_sums[subset_idx] += pack_entropy
@@ -409,17 +418,17 @@ def generate_split_mapping(labels_df, subsets: list[list]):
         "testSet": [],
     }
 
-    for img in (subsets[0] + subsets[1]):
-        result["trainvalSet"].append({
-            "path": img.name,
-            "label": get_label_of(labels_df, img.name),
-        })
+    for pack in (subsets[0] + subsets[1]):
+        result["trainvalSet"].append([
+            {"path": img.name, "label": get_label_of(labels_df, img.name)}
+            for img in pack["pack"]
+        ])
 
-    for img in subsets[2]:
-        result["testSet"].append({
-            "path": img.name,
-            "label": get_label_of(labels_df, img.name),
-        })
+    for pack in subsets[2]:
+        result["testSet"].append([
+            {"path": img.name, "label": get_label_of(labels_df, img.name)}
+            for img in pack["pack"]
+        ])
 
     return result
 
@@ -456,7 +465,7 @@ def run_mode_initial(subsets_props: list[float]):
     print("Hard examples / entropy (actual):", ss.get_subset_entropy_props())
     print("Hard examples / entropy (desired):", ss.subset_entropy_desired_props)
 
-def run_mode_kfoldcv():
+def run_mode_kfoldcv(k: int):
     pass
 
 if __name__ == "__main__":
@@ -474,4 +483,4 @@ if __name__ == "__main__":
     if args.initial is not None:
         run_mode_initial(args.initial)
     elif args.kfoldcv is not None:
-        run_mode_kfoldcv()
+        run_mode_kfoldcv(args.kfoldcv)
