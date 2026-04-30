@@ -26,6 +26,7 @@ OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
+KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
 
 class SubsetSplitter:
     EPSILON = 1e-9
@@ -180,6 +181,19 @@ class SubsetSplitter:
         subset_entropy_props_improv = cur_subset_entropy_props_ce - new_subset_entropy_props_ce
 
         return (class_props_improv + subset_sizes_improv + subset_entropy_props_improv) / 2
+
+    def print_stats(self):
+        print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
+        print("Subset sizes:", self.get_subset_sizes_counts())
+
+        print("Class balance (actual):", self.get_subset_class_props())
+        print("Class balance (desired):", self.get_subset_class_desired_props())
+
+        print("Props (actual):", self.get_subset_sizes_props())
+        print("Props (desired):", self.get_subset_sizes_desired_props())
+
+        print("Hard examples / entropy (actual):", self.get_subset_entropy_props())
+        print("Hard examples / entropy (desired):", self.subset_entropy_desired_props)
 
     @staticmethod
     def __ce_props(Q: list[float], P: list[float]) -> float:
@@ -412,28 +426,24 @@ def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
     
     return packs_counted
 
-def generate_split_mapping(labels_df, subsets: list[list]):
-    result = {
-        "trainvalSet": [],
-        "testSet": [],
-    }
+def generate_split_mapping(labels_df, subsets: list[list], subsets_names: list[str] | None = None):
+    result = {}
 
-    for pack in (subsets[0] + subsets[1]):
-        result["trainvalSet"].append([
-            {"path": img.name, "label": get_label_of(labels_df, img.name)}
-            for img in pack["pack"]
-        ])
+    if subsets_names is None:
+        subsets_names = [f"{n}" for n in range(len(subsets))]
 
-    for pack in subsets[2]:
-        result["testSet"].append([
-            {"path": img.name, "label": get_label_of(labels_df, img.name)}
-            for img in pack["pack"]
-        ])
+    for subset_name, subset in zip(subsets_names, subsets):
+        result[subset_name] = []
+        for pack in subset:
+            result[subset_name].append([
+                {"path": img.name, "label": get_label_of(labels_df, img.name)}
+                for img in pack["pack"]
+            ])
 
     return result
 
-def save_split_mapping(split_mapping):
-    with open(SPLIT_JSON_PATH, "w+") as f:
+def save_split_mapping(split_mapping, dest_path):
+    with open(dest_path, "w+") as f:
         f.write(json.dumps(split_mapping, indent=4, ensure_ascii=False))
 
 def run_mode_initial(subsets_props: list[float]):
@@ -450,23 +460,28 @@ def run_mode_initial(subsets_props: list[float]):
     datapacks_counted = count_packs(datapacks, labels_df)
     
     ss = SubsetSplitter(datapacks_counted, subsets_props)
-    sm = generate_split_mapping(labels_df, ss.subsets)
-    save_split_mapping(sm)
-
-    print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
-    print("Subset sizes:", ss.get_subset_sizes_counts())
-
-    print("Class balance (actual):", ss.get_subset_class_props())
-    print("Class balance (desired):", ss.get_subset_class_desired_props())
-
-    print("Props (actual):", ss.get_subset_sizes_props())
-    print("Props (desired):", ss.get_subset_sizes_desired_props())
-
-    print("Hard examples / entropy (actual):", ss.get_subset_entropy_props())
-    print("Hard examples / entropy (desired):", ss.subset_entropy_desired_props)
+    sm = generate_split_mapping(labels_df, [ss.subsets[0] + ss.subsets[1], ss.subsets[2]], ["trainvalSet", "testSet"])
+    save_split_mapping(sm, SPLIT_JSON_PATH)
+    ss.print_stats()
 
 def run_mode_kfoldcv(k: int):
-    pass
+    with open(SPLIT_JSON_PATH) as split:
+        split_mapping = json.load(split)
+
+    trainval_split = split_mapping["trainvalSet"]
+    trainval_packs = []
+
+    for pack in trainval_split:
+        paths_only = [img["path"] for img in pack]
+        trainval_packs.append(paths_only)
+
+    labels_df = load_clean_labels()
+    counted_packs = count_packs(trainval_packs, labels_df)
+    subsets_props = [float(1)/k for _ in range(k)]
+    ss = SubsetSplitter(counted_packs, subsets_props)
+    sm = generate_split_mapping(labels_df, ss.subsets)
+    save_split_mapping(sm, KFOLDCV_JSON_PATH)
+    ss.print_stats()
 
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
