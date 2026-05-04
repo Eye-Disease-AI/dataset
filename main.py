@@ -526,7 +526,9 @@ def save_split_mapping(split_mapping, dest_path):
         f.write(json.dumps(split_mapping, indent=4, ensure_ascii=False))
 
 
-def run_mode_initial(subsets_props: list[float]):
+def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = False):
+    assert i_know_what_i_am_doing
+
     patients_original_map = generate_patients_original_mapping()
     save_patients_original_mapping(patients_original_map)
 
@@ -553,7 +555,9 @@ def run_mode_initial(subsets_props: list[float]):
     ss.print_stats()
 
 
-def run_mode_kfoldcv(k: int):
+def run_mode_kfoldcv(
+    k: int, save_mapping: bool = False, print_stats: bool = False
+) -> dict:
     with open(SPLIT_JSON_PATH) as split:
         split_mapping = json.load(split)
 
@@ -569,8 +573,14 @@ def run_mode_kfoldcv(k: int):
     subsets_props = [float(1) / k for _ in range(k)]
     ss = SubsetSplitter(counted_packs, subsets_props)
     sm = generate_split_mapping(labels_df, ss.subsets)
-    save_split_mapping(sm, KFOLDCV_JSON_PATH)
-    ss.print_stats()
+
+    if save_mapping:
+        save_split_mapping(sm, KFOLDCV_JSON_PATH)
+
+    if print_stats:
+        ss.print_stats()
+
+    return sm
 
 
 if __name__ == "__main__":
@@ -578,6 +588,9 @@ if __name__ == "__main__":
         GENERATED_DIR_PATH.mkdir()
 
     parser = argparse.ArgumentParser()
+
+    parser.add_argument("-i-know-what-i-am-doing", action="store_true")
+
     group = parser.add_mutually_exclusive_group(required=True)
 
     group.add_argument(
@@ -588,6 +601,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.initial is not None:
-        run_mode_initial(args.initial)
+        run_mode_initial(args.initial, args.i_know_what_i_am_doing)
     elif args.kfoldcv is not None:
-        run_mode_kfoldcv(args.kfoldcv)
+        run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
