@@ -588,16 +588,12 @@ def run_mode_kfoldcv(
     return sm
 
 
-def download_deps():
+def download_files(names: list[str]) -> list[Path]:
     if not CACHE_PATH.exists():
         CACHE_PATH.mkdir()
 
-    deps = [
-        Path("Nuclear_Cataract_2025_12_21.zip"),
-        Path("Nuclear_Cataract_Original.zip"),
-    ]
-    deps_cache_paths = [CACHE_PATH / dep for dep in deps]
-    needs_download = [(d, p) for d, p in zip(deps, deps_cache_paths) if not p.exists()]
+    deps_cache_paths = [CACHE_PATH / dep for dep in names]
+    needs_download = [(d, p) for d, p in zip(names, deps_cache_paths) if not p.exists()]
 
     if len(needs_download) > 0:
         print("Some deps needs to be downloaded, please authenticate")
@@ -619,9 +615,17 @@ def download_deps():
                         pbar.update(1024)
             print(f"\nDownloaded {dep_name}")
 
+    return deps_cache_paths
+
+
+def download_deps():
+    names = ["Nuclear_Cataract_2025_12_21.zip", "Nuclear_Cataract_Original.zip"]
+    download_files(names)
+
 
 def download_dataset():
-    pass
+    names = ["Nuclear_Cataract_2026_04_30.zip"]
+    download_files(names)
 
 
 if __name__ == "__main__":
@@ -648,3 +652,4 @@ if __name__ == "__main__":
         run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
     elif args.deps is not None:
         download_deps()
+        download_dataset()
