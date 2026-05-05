@@ -1,2 +1,4 @@
 data/*
 !data/.gitkeep
+.cache/
+.DS_Store

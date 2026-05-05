@@ -2,12 +2,15 @@ import argparse
 import json
 import os
 from collections import defaultdict
+from getpass import getpass
 from math import log
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 import tqdm
+from requests.auth import HTTPBasicAuth
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -21,6 +24,8 @@ ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
+CACHE_PATH = SCRIPT_DIR / ".cache"
+FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
 
 
 class SubsetSplitter:
@@ -583,6 +588,42 @@ def run_mode_kfoldcv(
     return sm
 
 
+def download_deps():
+    if not CACHE_PATH.exists():
+        CACHE_PATH.mkdir()
+
+    deps = [
+        Path("Nuclear_Cataract_2025_12_21.zip"),
+        Path("Nuclear_Cataract_Original.zip"),
+    ]
+    deps_cache_paths = [CACHE_PATH / dep for dep in deps]
+    needs_download = [(d, p) for d, p in zip(deps, deps_cache_paths) if not p.exists()]
+
+    if len(needs_download) > 0:
+        print("Some deps needs to be downloaded, please authenticate")
+        username = input("Username: ")
+        password = getpass("Password: ")
+        basic = HTTPBasicAuth(username, password)
+
+        for dep_name, dep_cache_path in needs_download:
+            print(f"Downloading {dep_name} -> {dep_cache_path}")
+            r = requests.get(
+                f"{FILESERVER_URL}/{dep_name}",
+                auth=basic,
+                stream=True,
+            )
+            with open(dep_cache_path, "wb") as dest_file:
+                with tqdm.tqdm(unit="B", unit_scale=True, unit_divisor=1024) as pbar:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        dest_file.write(chunk)
+                        pbar.update(1024)
+            print(f"\nDownloaded {dep_name}")
+
+
+def download_dataset():
+    pass
+
+
 if __name__ == "__main__":
     if not GENERATED_DIR_PATH.exists():
         GENERATED_DIR_PATH.mkdir()
@@ -597,6 +638,7 @@ if __name__ == "__main__":
         "-initial", nargs=3, metavar=("train", "val", "test"), type=float
     )
     group.add_argument("-kfoldcv", type=int, metavar="k")
+    group.add_argument("-deps", type=bool)
 
     args = parser.parse_args()
 
@@ -604,3 +646,5 @@ if __name__ == "__main__":
         run_mode_initial(args.initial, args.i_know_what_i_am_doing)
     elif args.kfoldcv is not None:
         run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
+    elif args.deps is not None:
+        download_deps()
