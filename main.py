@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import shutil
+import zipfile
 from collections import defaultdict
 from getpass import getpass
 from math import log
@@ -26,6 +28,9 @@ SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
 CACHE_PATH = SCRIPT_DIR / ".cache"
 FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
+ORIGINAL_DATASET_ZIP_NAME = "Nuclear_Cataract_Original.zip"
+OURS_DATASET_ZIP_NAME = "Nuclear_Cataract_2025_12_21.zip"
+PREPARED_DATASET_ZIP_NAME = "Nuclear_Cataract_2026_04_30.zip"
 
 
 class SubsetSplitter:
@@ -534,6 +539,27 @@ def save_split_mapping(split_mapping, dest_path):
 def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = False):
     assert i_know_what_i_am_doing
 
+    DATA_BASE_PATH.mkdir(exist_ok=True)
+
+    if not ORIGINAL_DATASET_PATH.exists():
+        zip_cache_path = download_files([ORIGINAL_DATASET_ZIP_NAME])[0]
+        with zipfile.ZipFile(zip_cache_path, "r") as zip_ref:
+            zip_ref.extractall(DATA_BASE_PATH)
+
+    if not OURS_DATASET_PATH.exists():
+        zip_cache_path = download_files([OURS_DATASET_ZIP_NAME])[0]
+        with zipfile.ZipFile(zip_cache_path, "r") as zip_ref:
+            zip_ref.extractall(DATA_BASE_PATH)
+        shutil.move(
+            DATA_BASE_PATH / "Nuclear_Cataract_2025_12_21" / "Nuclear Cataract",
+            DATA_BASE_PATH,
+        )
+        (DATA_BASE_PATH / "Nuclear_Cataract_2025_12_21").rmdir()
+        shutil.move(DATA_BASE_PATH / "Nuclear Cataract", OURS_DATASET_PATH)
+
+    if not GENERATED_DIR_PATH.exists():
+        GENERATED_DIR_PATH.mkdir()
+
     patients_original_map = generate_patients_original_mapping()
     save_patients_original_mapping(patients_original_map)
 
@@ -563,6 +589,28 @@ def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = 
 def run_mode_kfoldcv(
     k: int, save_mapping: bool = False, print_stats: bool = False
 ) -> dict:
+    if (
+        not ORIGINAL_DATASET_PATH.exists()
+        or not OURS_DATASET_PATH.exists()
+        or not GENERATED_DIR_PATH.exists()
+    ):
+        if DATA_BASE_PATH.exists():
+            data_files = list(DATA_BASE_PATH.iterdir())
+
+            if len(data_files) > 1 or (
+                len(data_files) == 1 and data_files[0] != ".gitkeep"
+            ):
+                raise Exception("data directory is not sane")
+
+        DATA_BASE_PATH.mkdir(exist_ok=True)
+
+        zip_cache_path = download_files([PREPARED_DATASET_ZIP_NAME])[0]
+        with zipfile.ZipFile(zip_cache_path, "r") as zip_ref:
+            zip_ref.extractall(DATA_BASE_PATH)
+
+        shutil.move(DATA_BASE_PATH / "Nuclear_Cataract" / "generated", DATA_BASE_PATH)
+        shutil.move(DATA_BASE_PATH / "Nuclear_Cataract", OURS_DATASET_PATH)
+
     with open(SPLIT_JSON_PATH) as split:
         split_mapping = json.load(split)
 
@@ -586,6 +634,21 @@ def run_mode_kfoldcv(
         ss.print_stats()
 
     return sm
+
+
+def run_mode_deps():
+    download_deps()
+    download_dataset()
+
+
+def download_deps():
+    names = ["Nuclear_Cataract_2025_12_21.zip", "Nuclear_Cataract_Original.zip"]
+    download_files(names)
+
+
+def download_dataset():
+    names = ["Nuclear_Cataract_2026_04_30.zip"]
+    download_files(names)
 
 
 def download_files(names: list[str]) -> list[Path]:
@@ -618,20 +681,7 @@ def download_files(names: list[str]) -> list[Path]:
     return deps_cache_paths
 
 
-def download_deps():
-    names = ["Nuclear_Cataract_2025_12_21.zip", "Nuclear_Cataract_Original.zip"]
-    download_files(names)
-
-
-def download_dataset():
-    names = ["Nuclear_Cataract_2026_04_30.zip"]
-    download_files(names)
-
-
 if __name__ == "__main__":
-    if not GENERATED_DIR_PATH.exists():
-        GENERATED_DIR_PATH.mkdir()
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-i-know-what-i-am-doing", action="store_true")
@@ -651,5 +701,4 @@ if __name__ == "__main__":
     elif args.kfoldcv is not None:
         run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
     elif args.deps is not None:
-        download_deps()
-        download_dataset()
+        run_mode_deps()
