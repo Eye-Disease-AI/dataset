@@ -592,11 +592,7 @@ def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = 
 def run_mode_kfoldcv(
     k: int, save_mapping: bool = False, print_stats: bool = False
 ) -> dict:
-    if (
-        not ORIGINAL_DATASET_PATH.exists()
-        or not OURS_DATASET_PATH.exists()
-        or not GENERATED_DIR_PATH.exists()
-    ):
+    if not OURS_DATASET_PATH.exists() or not GENERATED_DIR_PATH.exists():
         if DATA_BASE_PATH.exists():
             data_files = list(DATA_BASE_PATH.iterdir())
 
@@ -617,26 +613,29 @@ def run_mode_kfoldcv(
     with open(SPLIT_JSON_PATH) as split:
         split_mapping = json.load(split)
 
-    trainval_split = split_mapping["trainvalSet"]
-    trainval_packs = []
+    if k == 0:
+        return split_mapping
+    else:
+        trainval_split = split_mapping["trainvalSet"]
+        trainval_packs = []
 
-    for pack in trainval_split:
-        paths_only = [img["path"] for img in pack]
-        trainval_packs.append(paths_only)
+        for pack in trainval_split:
+            paths_only = [img["path"] for img in pack]
+            trainval_packs.append(paths_only)
 
-    labels_df = load_clean_labels()
-    counted_packs = count_packs(trainval_packs, labels_df)
-    subsets_props = [float(1) / k for _ in range(k)]
-    ss = SubsetSplitter(counted_packs, subsets_props)
-    sm = generate_split_mapping(labels_df, ss.subsets)
+        labels_df = load_clean_labels()
+        counted_packs = count_packs(trainval_packs, labels_df)
+        subsets_props = [float(1) / k for _ in range(k)]
+        ss = SubsetSplitter(counted_packs, subsets_props)
+        sm = generate_split_mapping(labels_df, ss.subsets)
 
-    if save_mapping:
-        save_split_mapping(sm, KFOLDCV_JSON_PATH)
+        if save_mapping:
+            save_split_mapping(sm, KFOLDCV_JSON_PATH)
 
-    if print_stats:
-        ss.print_stats()
+        if print_stats:
+            ss.print_stats()
 
-    return sm
+        return sm
 
 
 def run_mode_deps():
