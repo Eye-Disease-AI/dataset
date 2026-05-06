@@ -609,7 +609,7 @@ def run_mode_kfoldcv(
 
         zip_cache_path = download_files([PREPARED_DATASET_ZIP_NAME])[0]
         with zipfile.ZipFile(zip_cache_path, "r") as zip_ref:
-            zip_ref.extractall(DATA_BASE_PATH)
+            zip_ref.extractall(DATA_BASE_PATH / "Nuclear_Cataract")
 
         shutil.move(DATA_BASE_PATH / "Nuclear_Cataract" / "generated", DATA_BASE_PATH)
         shutil.move(DATA_BASE_PATH / "Nuclear_Cataract", OURS_DATASET_PATH)
