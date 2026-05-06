@@ -664,6 +664,7 @@ def run_mode_zipgen():
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     shutil.make_archive(str(ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT), "zip", ZIPGEN_TMP_DIR)
+    shutil.rmtree(ZIPGEN_TMP_DIR)
 
 
 def download_deps():
