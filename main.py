@@ -31,6 +31,9 @@ FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
 ORIGINAL_DATASET_ZIP_NAME = "Nuclear_Cataract_Original.zip"
 OURS_DATASET_ZIP_NAME = "Nuclear_Cataract_2025_12_21.zip"
 PREPARED_DATASET_ZIP_NAME = "Nuclear_Cataract_2026_04_30.zip"
+ZIPGEN_TMP_DIR = DATA_BASE_PATH / "Nuclear_Cataract"
+OUTPUT_DIR = SCRIPT_DIR / ".out"
+ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT = OUTPUT_DIR / "Nuclear_Cataract_Generated"
 
 
 class SubsetSplitter:
@@ -641,6 +644,28 @@ def run_mode_deps():
     download_dataset()
 
 
+def run_mode_zipgen():
+    if (
+        not ORIGINAL_DATASET_PATH.exists()
+        or not OURS_DATASET_PATH.exists()
+        or not GENERATED_DIR_PATH.exists()
+    ):
+        raise RuntimeError("dataset is not ready for zip generation")
+
+    ZIPGEN_TMP_DIR.mkdir()
+    shutil.copytree(GENERATED_DIR_PATH, ZIPGEN_TMP_DIR / GENERATED_DIR_PATH.name)
+
+    for f in OURS_DATASET_PATH.iterdir():
+        if f.name not in ["kfoldcv.json"]:
+            if f.is_dir():
+                shutil.copytree(f, ZIPGEN_TMP_DIR / f.name)
+            else:
+                shutil.copy(f, ZIPGEN_TMP_DIR)
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    shutil.make_archive(str(ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT), "zip", ZIPGEN_TMP_DIR)
+
+
 def download_deps():
     names = ["Nuclear_Cataract_2025_12_21.zip", "Nuclear_Cataract_Original.zip"]
     download_files(names)
@@ -693,6 +718,7 @@ if __name__ == "__main__":
     )
     group.add_argument("-kfoldcv", type=int, metavar="k")
     group.add_argument("-deps", type=bool)
+    group.add_argument("-zipgen", type=bool)
 
     args = parser.parse_args()
 
@@ -702,3 +728,5 @@ if __name__ == "__main__":
         run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
     elif args.deps is not None:
         run_mode_deps()
+    elif args.zipgen is not None:
+        run_mode_zipgen()
