@@ -26,6 +26,7 @@ ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
+TRAINVAL_JSON_PATH = GENERATED_DIR_PATH / "trainval.json"
 CACHE_PATH = SCRIPT_DIR / ".cache"
 FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
 ORIGINAL_DATASET_ZIP_NAME = "Nuclear_Cataract_Original.zip"
@@ -643,27 +644,39 @@ def flatten_packs(packs: list[list[dict]]):
     return result
 
 
-def run_mode_kfoldcv(
-    k: int, save_mapping: bool = False, print_stats: bool = False
-) -> dict:
+def split_mode_helper(
+    subsets_props: list[float],
+    subsets_names: list[str] | None = None,
+    save_mapping_path: Path | None = None,
+    print_stats: bool = False,
+    should_flatten_packs: bool = False,
+):
     ensure_runtime_deps()
 
-    with open(SPLIT_JSON_PATH) as split:
-        split_mapping = json.load(split)
+    ss, sm = split_trainval_set(subsets_props, subsets_names, should_flatten_packs)
 
-    if k == 0:
-        return split_mapping
-    else:
-        subsets_props = [float(1) / k for _ in range(k)]
-        ss, sm = split_trainval_set(subsets_props)
+    if save_mapping_path:
+        save_split_mapping(sm, save_mapping_path)
 
-        if save_mapping:
-            save_split_mapping(sm, KFOLDCV_JSON_PATH)
+    if print_stats:
+        ss.print_stats()
 
-        if print_stats:
-            ss.print_stats()
+    return sm
 
-        return sm
+
+def run_mode_kfoldcv(
+    k: int,
+    save_mapping: bool = False,
+    print_stats: bool = False,
+    should_flatten_packs: bool = False,
+) -> dict:
+    save_mapping_path = KFOLDCV_JSON_PATH if save_mapping else None
+    return split_mode_helper(
+        subsets_props=[float(1) / k for _ in range(k)],
+        save_mapping_path=save_mapping_path,
+        print_stats=print_stats,
+        should_flatten_packs=should_flatten_packs,
+    )
 
 
 def run_mode_deps():
@@ -683,7 +696,7 @@ def run_mode_zipgen():
     shutil.copytree(GENERATED_DIR_PATH, ZIPGEN_TMP_DIR / GENERATED_DIR_PATH.name)
 
     for f in OURS_DATASET_PATH.iterdir():
-        if f.name not in ["kfoldcv.json"]:
+        if f.name not in [KFOLDCV_JSON_PATH.name, TRAINVAL_JSON_PATH.name]:
             if f.is_dir():
                 shutil.copytree(f, ZIPGEN_TMP_DIR / f.name)
             else:
@@ -692,6 +705,23 @@ def run_mode_zipgen():
     OUTPUT_DIR.mkdir(exist_ok=True)
     shutil.make_archive(str(ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT), "zip", ZIPGEN_TMP_DIR)
     shutil.rmtree(ZIPGEN_TMP_DIR)
+
+
+def run_mode_trainval(
+    train_prop: float,
+    val_prop: float,
+    save_mapping: bool = False,
+    print_stats: bool = False,
+    should_flatten_packs: bool = False,
+) -> dict:
+    save_mapping_path = TRAINVAL_JSON_PATH if save_mapping else None
+    return split_mode_helper(
+        [train_prop, val_prop],
+        ["train", "val"],
+        save_mapping_path,
+        print_stats,
+        should_flatten_packs,
+    )
 
 
 def download_deps():
@@ -747,14 +777,25 @@ if __name__ == "__main__":
     group.add_argument("-kfoldcv", type=int, metavar="k")
     group.add_argument("-deps", type=bool)
     group.add_argument("-zipgen", type=bool)
+    group.add_argument("-trainval", nargs=2, metavar=("train", "val"), type=float)
 
     args = parser.parse_args()
 
     if args.initial is not None:
         run_mode_initial(args.initial, args.i_know_what_i_am_doing)
     elif args.kfoldcv is not None:
-        run_mode_kfoldcv(args.kfoldcv, save_mapping=True, print_stats=True)
+        run_mode_kfoldcv(
+            args.kfoldcv, save_mapping=True, print_stats=True, should_flatten_packs=True
+        )
     elif args.deps is not None:
         run_mode_deps()
     elif args.zipgen is not None:
         run_mode_zipgen()
+    elif args.trainval is not None:
+        run_mode_trainval(
+            args.trainval[0],
+            args.trainval[1],
+            save_mapping=True,
+            print_stats=True,
+            should_flatten_packs=True,
+        )
