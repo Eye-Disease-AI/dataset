@@ -5,7 +5,7 @@ import torchvision
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-from main import OURS_DATASET_PATH, split_trainval_set
+from main import OURS_DATASET_PATH, run_mode_trainval, split_trainval_set
 
 
 class NuclearCataract(torch.utils.data.Dataset):
@@ -75,9 +75,7 @@ class SubsetTransformer(torch.utils.data.Dataset):
         return tuple([img] + list(data[1:]))
 
 
-_, split_mapping = split_trainval_set(
-    [0.8, 0.2], ["train", "val"], should_flatten_packs=True
-)
+split_mapping = run_mode_trainval(0.8, 0.2, should_flatten_packs=True)
 train_dataset = NuclearCataract(
     split_mapping["train"], cache_size=224, return_paths=True
 )
