@@ -482,8 +482,6 @@ def entropy(p_counts: list[int]) -> float:
 def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
     packs_counted = []
 
-    print(labels_df)
-
     for pack in datapacks:
         pack_labels = []
         pack_filtered = []
