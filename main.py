@@ -608,6 +608,18 @@ def ensure_runtime_deps():
         shutil.move(DATA_BASE_PATH / "Nuclear_Cataract", OURS_DATASET_PATH)
 
 
+def load_test_set(should_flatten_packs: bool = False):
+    with open(SPLIT_JSON_PATH) as split:
+        split_json = json.load(split)
+
+    ts = split_json["testSet"]
+
+    if should_flatten_packs:
+        ts = flatten_packs(ts)
+
+    return ts
+
+
 def split_trainval_set(
     subsets_props: list[float],
     subsets_names: list[str] | None = None,
