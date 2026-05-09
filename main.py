@@ -735,23 +735,37 @@ def run_mode_trainval(
     )
 
 
+def get_class_mapping_from_elements(elements: list, are_packs: bool = True):
+    classes = set()
+
+    if not are_packs:
+        elements = [elements]
+
+    for pack in elements:
+        for sample in pack:
+            classes.add(sample["label"])
+
+    classes = sorted(classes)
+    class_mapping: dict[str, int] = {}
+
+    for cls_idx, cls in enumerate(classes):
+        class_mapping[cls] = cls_idx
+
+    return class_mapping
+
+
 def run_mode_classes(
     save_mapping: bool,
 ) -> dict:
     with open(SPLIT_JSON_PATH) as split:
         split_json = json.load(split)
 
-    classes = set()
+    all_packs = []
 
     for subset_name in split_json:
-        for pack in split_json[subset_name]:
-            for sample in pack:
-                classes.add(sample["label"])
+        all_packs.extend(split_json[subset_name])
 
-    class_mapping: dict[str, int] = {}
-
-    for cls_idx, cls in enumerate(classes):
-        class_mapping[cls] = cls_idx
+    class_mapping = get_class_mapping_from_elements(all_packs)
 
     if save_mapping:
         with open(CLASSES_JSON_PATH, "w") as f:

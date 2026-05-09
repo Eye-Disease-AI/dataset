@@ -2,11 +2,18 @@ from pathlib import Path
 
 import torch
 import torchvision
-from main import OURS_DATASET_PATH, load_test_set, run_mode_trainval
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-ALLOW_TEST_SET = False
+from dataset.main import (
+    OURS_DATASET_PATH,
+    get_class_mapping_from_elements,
+    load_test_set,
+    run_mode_classes,
+    run_mode_trainval,
+)
+
+ALLOW_TEST_SET = True
 
 
 class NuclearCataractDataset:
@@ -23,7 +30,7 @@ class NuclearCataractDataset:
             self.val_prop = val_prop
 
     class TestMode:
-        packs: list[dict]
+        samples: list[dict]
 
     def __init__(
         self,
@@ -40,7 +47,7 @@ class NuclearCataractDataset:
                 mode.train_prop, mode.val_prop, should_flatten_packs=True
             )
         elif isinstance(mode, NuclearCataractDataset.TestMode):
-            mode.packs = load_test_set(should_flatten_packs=True)
+            mode.samples = load_test_set(should_flatten_packs=True)
         else:
             raise NotImplementedError
 
@@ -74,7 +81,7 @@ class NuclearCataractDataset:
 
         if isinstance(self.mode, NuclearCataractDataset.TestMode):
             return NuclearCataractSubset(
-                self.mode.packs,
+                self.mode.samples,
                 self.return_paths,
                 self.cache_size is not None,
                 self.cache_size,
@@ -94,6 +101,9 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         super().__init__()
 
         self.samples = samples
+        self.sample_to_idx = get_class_mapping_from_elements(
+            self.samples, are_packs=False
+        )
         self.should_cache = should_cache
         self.return_paths = return_paths
         self.cache = {}
@@ -118,6 +128,8 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
             result = [self.cache[sample["path"]], sample["label"]]
         else:
             result = [self.__load_img(sample["path"]), sample["label"]]
+
+        result[1] = self.sample_to_idx[result[1]]
 
         if self.return_paths:
             result.append(sample["path"])
