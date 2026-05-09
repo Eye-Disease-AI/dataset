@@ -46,15 +46,22 @@ class NuclearCataractDataset:
             mode.split_mapping = run_mode_trainval(
                 mode.train_prop, mode.val_prop, should_flatten_packs=True
             )
+            self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.TestMode):
             mode.samples = load_test_set(should_flatten_packs=True)
+            self.label_to_idx = get_class_mapping_from_elements(
+                mode.samples, are_packs=False
+            )
         else:
             raise NotImplementedError
+
+        self.n_classes = len(self.label_to_idx)
 
     def train_set(self):
         if isinstance(self.mode, NuclearCataractDataset.TrainValMode):
             return NuclearCataractSubset(
                 self.mode.split_mapping["train"],
+                self.label_to_idx,
                 self.return_paths,
                 self.cache_size is not None,
                 self.cache_size,
@@ -66,6 +73,7 @@ class NuclearCataractDataset:
         if isinstance(self.mode, NuclearCataractDataset.TrainValMode):
             return NuclearCataractSubset(
                 self.mode.split_mapping["val"],
+                self.label_to_idx,
                 self.return_paths,
                 self.cache_size is not None,
                 self.cache_size,
@@ -82,6 +90,7 @@ class NuclearCataractDataset:
         if isinstance(self.mode, NuclearCataractDataset.TestMode):
             return NuclearCataractSubset(
                 self.mode.samples,
+                self.label_to_idx,
                 self.return_paths,
                 self.cache_size is not None,
                 self.cache_size,
@@ -94,6 +103,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
     def __init__(
         self,
         samples,
+        label_to_idx: dict[str, int],
         return_paths=False,
         should_cache=True,
         cache_size: int | None = None,
@@ -101,9 +111,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         super().__init__()
 
         self.samples = samples
-        self.sample_to_idx = get_class_mapping_from_elements(
-            self.samples, are_packs=False
-        )
+        self.label_to_idx = label_to_idx
         self.should_cache = should_cache
         self.return_paths = return_paths
         self.cache = {}
@@ -129,7 +137,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         else:
             result = [self.__load_img(sample["path"]), sample["label"]]
 
-        result[1] = self.sample_to_idx[result[1]]
+        result[1] = self.label_to_idx[result[1]]
 
         if self.return_paths:
             result.append(sample["path"])
@@ -138,6 +146,20 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
 
     def __load_img(self, path: Path) -> torch.Tensor:
         return torchvision.io.decode_image(str(OURS_DATASET_PATH / path))
+
+    def class_weights(self) -> torch.Tensor:
+        n_classes = len(self.label_to_idx)
+        classes_counts = torch.Tensor(self.__classes_counts())
+        n = sum(classes_counts)
+        return n / (n_classes * classes_counts)
+
+    def __classes_counts(self) -> list[int]:
+        classes_counts = [0 for _ in self.label_to_idx]
+
+        for sample in self.samples:
+            classes_counts[self.label_to_idx[sample["label"]]] += 1
+
+        return classes_counts
 
 
 if __name__ == "__main__":
