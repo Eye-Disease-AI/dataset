@@ -27,6 +27,7 @@ PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
 SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
 TRAINVAL_JSON_PATH = GENERATED_DIR_PATH / "trainval.json"
+CLASSES_JSON_PATH = GENERATED_DIR_PATH / "classes.json"
 CACHE_PATH = SCRIPT_DIR / ".cache"
 FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
 ORIGINAL_DATASET_ZIP_NAME = "Nuclear_Cataract_Original.zip"
@@ -734,6 +735,31 @@ def run_mode_trainval(
     )
 
 
+def run_mode_classes(
+    save_mapping: bool,
+) -> dict:
+    with open(SPLIT_JSON_PATH) as split:
+        split_json = json.load(split)
+
+    classes = set()
+
+    for subset_name in split_json:
+        for pack in split_json[subset_name]:
+            for sample in pack:
+                classes.add(sample["label"])
+
+    class_mapping: dict[str, int] = {}
+
+    for cls_idx, cls in enumerate(classes):
+        class_mapping[cls] = cls_idx
+
+    if save_mapping:
+        with open(CLASSES_JSON_PATH, "w") as f:
+            f.write(json.dumps(class_mapping, indent=4, ensure_ascii=False))
+
+    return class_mapping
+
+
 def download_deps():
     names = ["Nuclear_Cataract_2025_12_21.zip", "Nuclear_Cataract_Original.zip"]
     download_files(names)
@@ -788,6 +814,7 @@ if __name__ == "__main__":
     group.add_argument("-deps", type=bool)
     group.add_argument("-zipgen", type=bool)
     group.add_argument("-trainval", nargs=2, metavar=("train", "val"), type=float)
+    group.add_argument("-classes", type=bool)
 
     args = parser.parse_args()
 
@@ -808,4 +835,8 @@ if __name__ == "__main__":
             save_mapping=True,
             print_stats=True,
             should_flatten_packs=True,
+        )
+    elif args.classes is not None:
+        run_mode_classes(
+            save_mapping=True,
         )
