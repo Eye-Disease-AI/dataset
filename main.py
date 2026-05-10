@@ -609,11 +609,24 @@ def ensure_runtime_deps():
         shutil.move(DATA_BASE_PATH / "Nuclear_Cataract", OURS_DATASET_PATH)
 
 
-def load_test_set(should_flatten_packs: bool = False):
+def load_test_set(should_flatten_packs: bool = False, only_hard: bool = False):
     with open(SPLIT_JSON_PATH) as split:
         split_json = json.load(split)
 
     ts = split_json["testSet"]
+    ts_filtered = []
+
+    if only_hard:
+        for pack in ts:
+            cataracts_count = sum(
+                [1 if sample["label"] == "Zaćma" else 0 for sample in pack]
+            )
+            non_cataracts_count = len(pack) - cataracts_count
+
+            if cataracts_count > 0 and non_cataracts_count > 0:
+                ts_filtered.append(pack)
+    else:
+        ts_filtered = ts
 
     if should_flatten_packs:
         ts = flatten_packs(ts)
@@ -625,6 +638,7 @@ def split_trainval_set(
     subsets_props: list[float],
     subsets_names: list[str] | None = None,
     should_flatten_packs: bool = False,
+    only_hard: bool = False,
 ) -> tuple[SubsetSplitter, dict]:
     with open(SPLIT_JSON_PATH) as split:
         split_mapping = json.load(split)
@@ -638,6 +652,15 @@ def split_trainval_set(
 
     labels_df = load_clean_labels()
     counted_packs = count_packs(trainval_packs, labels_df)
+
+    if only_hard:
+        counted_packs = list(
+            filter(
+                lambda x: x["cataracts_count"] > 0 and x["non_cataracts_count"] > 0,
+                counted_packs,
+            )
+        )
+
     ss = SubsetSplitter(counted_packs, subsets_props)
     sm = generate_split_mapping(labels_df, ss.subsets, subsets_names)
 
@@ -661,10 +684,13 @@ def split_mode_helper(
     save_mapping_path: Path | None = None,
     print_stats: bool = False,
     should_flatten_packs: bool = False,
+    only_hard: bool = False,
 ):
     ensure_runtime_deps()
 
-    ss, sm = split_trainval_set(subsets_props, subsets_names, should_flatten_packs)
+    ss, sm = split_trainval_set(
+        subsets_props, subsets_names, should_flatten_packs, only_hard
+    )
 
     if save_mapping_path:
         save_split_mapping(sm, save_mapping_path)
@@ -724,6 +750,7 @@ def run_mode_trainval(
     save_mapping: bool = False,
     print_stats: bool = False,
     should_flatten_packs: bool = False,
+    only_hard: bool = False,
 ) -> dict:
     save_mapping_path = TRAINVAL_JSON_PATH if save_mapping else None
     return split_mode_helper(
@@ -732,6 +759,7 @@ def run_mode_trainval(
         save_mapping_path,
         print_stats,
         should_flatten_packs,
+        only_hard,
     )
 
 

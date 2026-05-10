@@ -37,6 +37,7 @@ class NuclearCataractDataset:
         mode: KFoldCVMode | TrainValMode | TestMode,
         cache_size: int | None = None,
         return_paths: bool = False,
+        only_hard: bool = False,
     ):
         self.mode = mode
         self.cache_size = cache_size
@@ -44,7 +45,10 @@ class NuclearCataractDataset:
 
         if isinstance(mode, NuclearCataractDataset.TrainValMode):
             mode.split_mapping = run_mode_trainval(
-                mode.train_prop, mode.val_prop, should_flatten_packs=True
+                mode.train_prop,
+                mode.val_prop,
+                should_flatten_packs=True,
+                only_hard=only_hard,
             )
             self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.TestMode):
