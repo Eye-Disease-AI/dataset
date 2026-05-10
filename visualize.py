@@ -48,15 +48,15 @@ def run_mode_visualize(grid_height: int, grid_width: int, only_hard: bool = Fals
     labels = []
     paths = []
 
-    for i in range(9):
+    for i in range(grid_height * grid_width):
         sample = t[i]
         images.append(sample[0])
         labels.append(t.idx_to_label[sample[1]])
         paths.append(sample[2])
 
     visualize_grid(
-        3,
-        3,
+        grid_height,
+        grid_width,
         images,
         labels,
         paths,
