@@ -112,6 +112,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
 
         self.samples = samples
         self.label_to_idx = label_to_idx
+        self.idx_to_label = {v: k for k, v in self.label_to_idx.items()}
         self.should_cache = should_cache
         self.return_paths = return_paths
         self.cache = {}
