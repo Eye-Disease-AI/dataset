@@ -4,7 +4,6 @@ import os
 import shutil
 import zipfile
 from collections import defaultdict
-from enum import Enum
 from getpass import getpass
 from math import log
 from pathlib import Path
@@ -13,6 +12,7 @@ import numpy as np
 import pandas as pd
 import requests
 import tqdm
+from hard_policy import HardPolicy
 from requests.auth import HTTPBasicAuth
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -37,12 +37,6 @@ PREPARED_DATASET_ZIP_NAME = "Nuclear_Cataract_2026_05_06.zip"
 ZIPGEN_TMP_DIR = DATA_BASE_PATH / "Nuclear_Cataract"
 OUTPUT_DIR = SCRIPT_DIR / ".out"
 ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT = OUTPUT_DIR / "Nuclear_Cataract_Generated"
-
-
-class HardPolicy(Enum):
-    PASSTHROUGH = 1
-    NO_HARD = 1
-    ONLY_HARD = 2
 
 
 class SubsetSplitter:
@@ -487,17 +481,17 @@ def entropy(p_counts: list[int]) -> float:
     return result
 
 
-def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
+def count_labeled_packs(labeled_packs: list[list[dict[str, str]]]) -> list[dict]:
     packs_counted = []
 
-    for pack in datapacks:
+    for pack in labeled_packs:
         pack_labels = []
         pack_filtered = []
 
-        for image_path in pack:
-            image_path = Path(image_path)
+        for sample in pack:
+            image_path = Path(sample["path"])
             try:
-                image_label = get_label_of(labels_df, image_path.name)
+                image_label = sample["label"]
                 pack_filtered.append(image_path)
                 pack_labels.append(image_label)
             except Exception:
@@ -518,6 +512,25 @@ def count_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
         )
 
     return packs_counted
+
+
+def count_unlabeled_packs(datapacks: list[list[Path]], labels_df) -> list[dict]:
+    labeled_packs = []
+
+    for pack in datapacks:
+        pack_filtered = []
+
+        for image_path in pack:
+            image_path = Path(image_path)
+            try:
+                image_label = get_label_of(labels_df, image_path.name)
+                pack_filtered.append({"path": image_path, "label": image_label})
+            except Exception:
+                pass
+
+        labeled_packs.append(pack_filtered)
+
+    return count_labeled_packs(labeled_packs)
 
 
 def generate_split_mapping(
@@ -584,7 +597,7 @@ def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = 
     save_patients_ours_mapping(patients_ours_map)
     labels_df = load_clean_labels()
     datapacks = load_unlabeled_packs(patients_ours_map)
-    datapacks_counted = count_packs(datapacks, labels_df)
+    datapacks_counted = count_unlabeled_packs(datapacks, labels_df)
 
     ss = SubsetSplitter(datapacks_counted, subsets_props)
     sm = generate_split_mapping(
@@ -623,28 +636,7 @@ def load_test_set(
         split_json = json.load(split)
 
     ts = split_json["testSet"]
-    ts_filtered = []
-
-    if hard_policy == HardPolicy.ONLY_HARD:
-        for pack in ts:
-            cataracts_count = sum(
-                [1 if sample["label"] == "Zaćma" else 0 for sample in pack]
-            )
-            non_cataracts_count = len(pack) - cataracts_count
-
-            if cataracts_count > 0 and non_cataracts_count > 0:
-                ts_filtered.append(pack)
-    elif hard_policy == HardPolicy.NO_HARD:
-        for pack in ts:
-            cataracts_count = sum(
-                [1 if sample["label"] == "Zaćma" else 0 for sample in pack]
-            )
-            non_cataracts_count = len(pack) - cataracts_count
-
-            if not (cataracts_count > 0 and non_cataracts_count > 0):
-                ts_filtered.append(pack)
-    else:
-        ts_filtered = ts
+    ts = hard_policy.apply(ts)
 
     if should_flatten_packs:
         ts = flatten_packs(ts)
@@ -662,31 +654,10 @@ def split_trainval_set(
         split_mapping = json.load(split)
 
     trainval_split = split_mapping["trainvalSet"]
-    trainval_packs = []
-
-    for pack in trainval_split:
-        paths_only = [img["path"] for img in pack]
-        trainval_packs.append(paths_only)
+    trainval_split = hard_policy.apply(trainval_split)
 
     labels_df = load_clean_labels()
-    counted_packs = count_packs(trainval_packs, labels_df)
-
-    if hard_policy == HardPolicy.ONLY_HARD:
-        counted_packs = list(
-            filter(
-                lambda x: x["cataracts_count"] > 0 and x["non_cataracts_count"] > 0,
-                counted_packs,
-            )
-        )
-    elif hard_policy == HardPolicy.NO_HARD:
-        counted_packs = list(
-            filter(
-                lambda x: (
-                    not (x["cataracts_count"] > 0 and x["non_cataracts_count"] > 0)
-                ),
-                counted_packs,
-            )
-        )
+    counted_packs = count_labeled_packs(trainval_split)
 
     ss = SubsetSplitter(counted_packs, subsets_props)
     sm = generate_split_mapping(labels_df, ss.subsets, subsets_names)
