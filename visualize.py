@@ -13,7 +13,7 @@ def visualize_grid(
     labels: list[str],
     paths: list[str],
 ):
-    _, axes = plt.subplots(grid_height, grid_width, figsize=(15, 15))
+    _, axes = plt.subplots(grid_height, grid_width, figsize=(10, 5))
     axes_flat = axes.flatten()
 
     for i, ax in enumerate(axes_flat):
