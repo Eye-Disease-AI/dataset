@@ -5,9 +5,9 @@ import torchvision
 from torchvision.transforms import v2
 from tqdm import tqdm
 
+from dataset.hard_policy import HardPolicy
 from dataset.main import (
     OURS_DATASET_PATH,
-    HardPolicy,
     get_class_mapping_from_elements,
     load_test_set,
     run_mode_classes,
@@ -31,7 +31,7 @@ class NuclearCataractDataset:
             self.val_prop = val_prop
 
     class TestMode:
-        samples: list[dict]
+        samples: list[dict[str, str]]
 
     def __init__(
         self,
@@ -53,7 +53,7 @@ class NuclearCataractDataset:
             )
             self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.TestMode):
-            mode.samples = load_test_set(
+            mode.samples = load_test_set(  # type: ignore
                 should_flatten_packs=True,
                 hard_policy=hard_policy,
             )

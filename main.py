@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 import requests
 import tqdm
-from hard_policy import HardPolicy
 from requests.auth import HTTPBasicAuth
+
+from dataset.hard_policy import HardPolicy
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
@@ -670,7 +671,7 @@ def split_trainval_set(
 
 
 def flatten_packs(packs: list[list[dict]]):
-    result = []
+    result: list[dict[str, str]] = []
     for pack in packs:
         result.extend(pack)
     return result
