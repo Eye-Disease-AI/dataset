@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from dataset.main import (
     OURS_DATASET_PATH,
+    HardPolicy,
     get_class_mapping_from_elements,
     load_test_set,
     run_mode_classes,
@@ -37,7 +38,7 @@ class NuclearCataractDataset:
         mode: KFoldCVMode | TrainValMode | TestMode,
         cache_size: int | None = None,
         return_paths: bool = False,
-        only_hard: bool = False,
+        hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
     ):
         self.mode = mode
         self.cache_size = cache_size
@@ -48,11 +49,14 @@ class NuclearCataractDataset:
                 mode.train_prop,
                 mode.val_prop,
                 should_flatten_packs=True,
-                only_hard=only_hard,
+                hard_policy=hard_policy,
             )
             self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.TestMode):
-            mode.samples = load_test_set(should_flatten_packs=True)
+            mode.samples = load_test_set(
+                should_flatten_packs=True,
+                hard_policy=hard_policy,
+            )
             self.label_to_idx = get_class_mapping_from_elements(
                 mode.samples, are_packs=False
             )

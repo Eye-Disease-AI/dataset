@@ -3,6 +3,7 @@ import argparse
 import matplotlib.pyplot as plt
 
 import dataset.loader
+from dataset.main import HardPolicy
 
 
 def visualize_grid(
@@ -40,7 +41,7 @@ def run_mode_visualize(
     subset = dataset.loader.NuclearCataractDataset(
         dataset.loader.NuclearCataractDataset.TrainValMode(0.8, 0.2),
         return_paths=True,
-        only_hard=only_hard,
+        hard_policy=(HardPolicy.ONLY_HARD if only_hard else HardPolicy.PASSTHROUGH),
     )
     t = subset.train_set()
 
