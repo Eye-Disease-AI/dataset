@@ -3,7 +3,6 @@ import argparse
 import matplotlib.pyplot as plt
 
 import dataset.loader
-import dataset.main
 
 
 def visualize_grid(
@@ -35,7 +34,9 @@ def visualize_grid(
     plt.show()
 
 
-def run_mode_visualize(grid_height: int, grid_width: int, only_hard: bool = False):
+def run_mode_visualize(
+    grid_height: int, grid_width: int, page: int = 0, only_hard: bool = False
+):
     subset = dataset.loader.NuclearCataractDataset(
         dataset.loader.NuclearCataractDataset.TrainValMode(0.8, 0.2),
         return_paths=True,
@@ -47,8 +48,9 @@ def run_mode_visualize(grid_height: int, grid_width: int, only_hard: bool = Fals
     labels = []
     paths = []
 
+    offset = grid_height * grid_width * page
     for i in range(grid_height * grid_width):
-        sample = t[i]
+        sample = t[i + offset]
         images.append(sample[0])
         labels.append(t.idx_to_label[sample[1]])
         paths.append(sample[2])
@@ -68,6 +70,7 @@ if __name__ == "__main__":
     parser.add_argument("--grid_height", type=int, default=3)
     parser.add_argument("--grid_width", type=int, default=3)
     parser.add_argument("--only_hard", action="store_true")
+    parser.add_argument("--page", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -75,4 +78,6 @@ if __name__ == "__main__":
         f"Running grid {args.grid_height}x{args.grid_width}. Only hard: {args.only_hard}"
     )
 
-    run_mode_visualize(args.grid_height, args.grid_width, only_hard=args.only_hard)
+    run_mode_visualize(
+        args.grid_height, args.grid_width, page=args.page, only_hard=args.only_hard
+    )
