@@ -56,6 +56,7 @@ class NuclearCataractDataset:
             raise NotImplementedError
 
         self.n_classes = len(self.label_to_idx)
+        self.label_names = {k for k in self.label_to_idx}
 
     def train_set(self):
         if isinstance(self.mode, NuclearCataractDataset.TrainValMode):
