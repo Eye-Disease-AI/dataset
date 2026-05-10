@@ -169,6 +169,7 @@ if __name__ == "__main__":
     )
     ss = ncd.train_set()
     print(ss[0])
+    print(ss.class_weights())
 
     print("Running test set mode...")
     ALLOW_TEST_SET = True
