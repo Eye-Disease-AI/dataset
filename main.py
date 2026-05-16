@@ -686,7 +686,6 @@ def split_mode_helper(
     hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
 ):
     ensure_runtime_deps()
-
     ss, sm = split_trainval_set(
         subsets_props, subsets_names, should_flatten_packs, hard_policy
     )
@@ -705,6 +704,7 @@ def run_mode_kfoldcv(
     save_mapping: bool = False,
     print_stats: bool = False,
     should_flatten_packs: bool = False,
+    hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
 ) -> dict:
     save_mapping_path = KFOLDCV_JSON_PATH if save_mapping else None
     return split_mode_helper(
@@ -712,6 +712,7 @@ def run_mode_kfoldcv(
         save_mapping_path=save_mapping_path,
         print_stats=print_stats,
         should_flatten_packs=should_flatten_packs,
+        hard_policy=hard_policy,
     )
 
 
