@@ -453,6 +453,28 @@ def get_label_of(labels_df: pd.DataFrame, image_path: str):
     return labels_df[labels_df["image"] == image_path]["choice"].item()
 
 
+def get_bbox_of(labels_df: pd.DataFrame, image_path: str) -> list[list[float]]:
+    """Returns a list of boxes in XYXY format.
+    Each box is a list of four floats scaled from 0 to 1.
+    xmin,ymin is top left and
+    xmax,ymax is bottom right
+    """
+    row = labels_df[labels_df["image"] == image_path]
+    if row.empty or "label" not in row.columns:
+        return []
+    label_field = row["label"].iloc[0]
+    if not isinstance(label_field, list):
+        return []
+    bboxes = []
+    for rect in label_field:
+        x1 = rect["x"] / 100.0
+        y1 = rect["y"] / 100.0
+        x2 = (rect["x"] + rect["width"]) / 100.0
+        y2 = (rect["y"] + rect["height"]) / 100.0
+        bboxes.append([x1, y1, x2, y2])
+    return bboxes
+
+
 def load_unlabeled_packs(patients_ours_map: dict[str, dict]):
     datapacks = []
 
