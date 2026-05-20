@@ -11,6 +11,7 @@ from dataset.main import (
     get_class_mapping_from_elements,
     load_test_set,
     run_mode_classes,
+    run_mode_kfoldcv,
     run_mode_trainval,
 )
 
@@ -20,6 +21,10 @@ ALLOW_TEST_SET = True
 class NuclearCataractDataset:
     class KFoldCVMode:
         k_folds: int
+        fold_mapping: dict
+
+        def __init__(self, k_folds: int):
+            self.k_folds = k_folds
 
     class TrainValMode:
         train_prop: float
@@ -48,6 +53,13 @@ class NuclearCataractDataset:
             mode.split_mapping = run_mode_trainval(
                 mode.train_prop,
                 mode.val_prop,
+                should_flatten_packs=True,
+                hard_policy=hard_policy,
+            )
+            self.label_to_idx = run_mode_classes(False)
+        elif isinstance(mode, NuclearCataractDataset.KFoldCVMode):
+            mode.fold_mapping = run_mode_kfoldcv(
+                mode.k_folds,
                 should_flatten_packs=True,
                 hard_policy=hard_policy,
             )
@@ -82,6 +94,34 @@ class NuclearCataractDataset:
         if isinstance(self.mode, NuclearCataractDataset.TrainValMode):
             return NuclearCataractSubset(
                 self.mode.split_mapping["val"],
+                self.label_to_idx,
+                self.return_paths,
+                self.cache_size is not None,
+                self.cache_size,
+            )
+        else:
+            raise NotImplementedError
+
+    def fold_train_set(self, fold_idx: int):
+        if isinstance(self.mode, NuclearCataractDataset.KFoldCVMode):
+            samples = [
+                s for j in range(self.mode.k_folds) if j != fold_idx
+                for s in self.mode.fold_mapping[str(j)]
+            ]
+            return NuclearCataractSubset(
+                samples,
+                self.label_to_idx,
+                self.return_paths,
+                self.cache_size is not None,
+                self.cache_size,
+            )
+        else:
+            raise NotImplementedError
+
+    def fold_val_set(self, fold_idx: int):
+        if isinstance(self.mode, NuclearCataractDataset.KFoldCVMode):
+            return NuclearCataractSubset(
+                self.mode.fold_mapping[str(fold_idx)],
                 self.label_to_idx,
                 self.return_paths,
                 self.cache_size is not None,
