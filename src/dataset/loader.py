@@ -120,6 +120,7 @@ class NuclearCataractDataset:
                 samples,
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -132,6 +133,7 @@ class NuclearCataractDataset:
                 self.mode.fold_mapping[str(fold_idx)],
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
