@@ -105,7 +105,9 @@ class NuclearCataractDataset:
     def fold_train_set(self, fold_idx: int):
         if isinstance(self.mode, NuclearCataractDataset.KFoldCVMode):
             samples = [
-                s for j in range(self.mode.k_folds) if j != fold_idx
+                s
+                for j in range(self.mode.k_folds)
+                if j != fold_idx
                 for s in self.mode.fold_mapping[str(j)]
             ]
             return NuclearCataractSubset(
