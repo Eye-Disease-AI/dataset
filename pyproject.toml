@@ -9,9 +9,12 @@ dependencies = [
     "lightning>=2.6.1",
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
-    "pandas>=3.0.2",
+    "pandas==2.3.3",
     "requests>=2.33.1",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
     "tqdm>=4.67.3",
 ]
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["data*", "notebooks*"]

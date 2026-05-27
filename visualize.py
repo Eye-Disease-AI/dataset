@@ -3,7 +3,7 @@ import argparse
 import matplotlib.pyplot as plt
 
 import dataset.loader
-from dataset.main import HardPolicy
+from dataset.hard_policy import HardPolicy
 
 
 def visualize_grid(
