@@ -4,3 +4,5 @@ data/*
 .DS_Store
 .out/
 __pycache__/
+*.egg-info
+*.png
