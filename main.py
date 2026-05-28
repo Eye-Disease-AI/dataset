@@ -14,7 +14,7 @@ import requests
 import tqdm
 from requests.auth import HTTPBasicAuth
 
-from dataset.hard_policy import HardPolicy
+from hard_policy import HardPolicy
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
