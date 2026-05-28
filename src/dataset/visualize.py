@@ -2,8 +2,8 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-import loader
-from hard_policy import HardPolicy
+from dataset import loader
+from dataset.hard_policy import HardPolicy
 
 
 def visualize_grid(
@@ -65,7 +65,7 @@ def run_mode_visualize(
     )
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--grid_height", type=int, default=3)
@@ -82,3 +82,7 @@ if __name__ == "__main__":
     run_mode_visualize(
         args.grid_height, args.grid_width, page=args.page, only_hard=args.only_hard
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
 [project]
 name = "dataset"
 version = "0.1.0"
@@ -15,6 +19,8 @@ dependencies = [
     "torchvision>=0.26.0",
     "tqdm>=4.67.3",
 ]
-[tool.setuptools.packages.find]
-where = ["."]
-exclude = ["data*", "notebooks*"]
+
+[project.scripts]
+main = "dataset.main:main"
+visualize = "dataset.visualize:main"
+example = "dataset.example:main"

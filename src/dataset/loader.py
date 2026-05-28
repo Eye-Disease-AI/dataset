@@ -5,8 +5,8 @@ import torchvision
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-from hard_policy import HardPolicy
-from main import (
+from dataset.hard_policy import HardPolicy
+from dataset.main import (
     OURS_DATASET_PATH,
     get_class_mapping_from_elements,
     load_test_set,

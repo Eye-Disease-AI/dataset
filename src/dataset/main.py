@@ -14,9 +14,9 @@ import requests
 import tqdm
 from requests.auth import HTTPBasicAuth
 
-from hard_policy import HardPolicy
+from dataset.hard_policy import HardPolicy
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_BASE_PATH = SCRIPT_DIR / "data"
 ORIGINAL_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-original"
 OURS_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-ours"
@@ -842,7 +842,7 @@ def download_files(names: list[str]) -> list[Path]:
     return deps_cache_paths
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-i-know-what-i-am-doing", action="store_true")
@@ -882,3 +882,7 @@ if __name__ == "__main__":
         run_mode_classes(
             save_mapping=True,
         )
+
+
+if __name__ == "__main__":
+    main()
