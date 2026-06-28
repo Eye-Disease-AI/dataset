@@ -1,11 +1,12 @@
-from enum import Enum
+from enum import StrEnum
+from typing import Literal
 
-
-class HardPolicy(Enum):
-    PASSTHROUGH = 1
-    NO_HARD = 2
-    ONLY_HARD = 3
-    DOMINATE = 4
+HardPolicyType = Literal["PASSTHROUGH", "NO_HARD", "ONLY_HARD", "DOMINATE"]
+class HardPolicy(StrEnum):
+    PASSTHROUGH: HardPolicyType = "PASSTHROUGH"
+    NO_HARD: HardPolicyType = "NO_HARD"
+    ONLY_HARD: HardPolicyType = "ONLY_HARD"
+    DOMINATE: HardPolicyType = "DOMINATE"
 
     def apply(
         self, packs_with_labels: list[list[dict[str, str]]]
