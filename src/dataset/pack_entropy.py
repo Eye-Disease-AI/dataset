@@ -1,16 +1,23 @@
 from pathlib import Path
 import numpy as np
 from main import split_trainval_set, load_test_set
-from dataset.loader import NuclearCataractDataset
 import matplotlib.pyplot as plt
 from collections import Counter
 import scipy.stats
 
 
 def plot_subsets_entropies():
+    plt.figure()
+    plt.title("Entropie rozkładu etykiet paczek danych")
+    plt.axis("off")
+    plt.subplot(3, 1, 1)
     plot_train_entropies()
+    plt.subplot(3, 1, 2)
     plot_val_entropies()
+    plt.subplot(3, 1, 3)
     plot_test_entropies()
+    plt.savefig("entropies.png")
+    plt.close()
 
 
 def plot_train_entropies():
@@ -51,12 +58,9 @@ def plot_subset_entropies(subset: list[list[dict]], dest_path: Path):
         entropies.append(entropy)
 
     print(entropies)
-    plt.title("Entropie rozkładu etykiet paczek danych")
     plt.xlabel("Numer paczki danych")
     plt.ylabel("Entropia")
     plt.bar(range(len(entropies)), entropies)
-    plt.savefig(dest_path)
-    plt.close()
     
 
 def calculate_pack_entropy(pack):

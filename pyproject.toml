@@ -25,3 +25,6 @@ dependencies = [
 main = "dataset.main:main"
 visualize = "dataset.visualize:main"
 example = "dataset.example:main"
+
+[tool.mypy]
+ignore_missing_imports = true
