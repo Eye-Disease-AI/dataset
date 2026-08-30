@@ -433,8 +433,8 @@ def save_patients_ours_mapping(patients_ours_map: dict[str, dict]):
         f.write(json.dumps(patients_ours_map, indent=4))
 
 
-def load_clean_labels():
-    labels_df = pd.read_json(OURS_DATASET_PATH / "labels.json")
+def load_clean_labels(labels_path: Path = OURS_DATASET_PATH / "labels.json"):
+    labels_df = pd.read_json(labels_path)
     labels_df = labels_df.dropna(subset=["choice"])
     labels_df = labels_df[
         labels_df["choice"].map(
