@@ -10,23 +10,23 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyzipper
 import requests
 import tqdm
+from PIL import Image
 from requests.auth import HTTPBasicAuth
 
+from dataset.datasets import DATA_BASE_PATH, GENERATED_DIR_PATH, DatasetKind
 from dataset.hard_policy import HardPolicy
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_BASE_PATH = SCRIPT_DIR / "data"
 ORIGINAL_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-original"
-OURS_DATASET_PATH = DATA_BASE_PATH / "nuclear-cataract-ours"
+OURS_DATASET_PATH = DatasetKind.NUCLEAR_CATARACT.root
 OUR_IMAGES_DIR = OURS_DATASET_PATH / "images"
-GENERATED_DIR_PATH = DATA_BASE_PATH / "generated"
 PATIENTS_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "patients_original.json"
 OUR_TO_ORIGINAL_JSON_PATH = GENERATED_DIR_PATH / "our_to_original.json"
 ORIGINAL_TO_OUR_JSON_PATH = GENERATED_DIR_PATH / "original_to_our.json"
 PATIENTS_OURS_JSON_PATH = GENERATED_DIR_PATH / "patients_ours.json"
-SPLIT_JSON_PATH = GENERATED_DIR_PATH / "split.json"
 KFOLDCV_JSON_PATH = GENERATED_DIR_PATH / "kfoldcv.json"
 TRAINVAL_JSON_PATH = GENERATED_DIR_PATH / "trainval.json"
 CLASSES_JSON_PATH = GENERATED_DIR_PATH / "classes.json"
@@ -35,6 +35,11 @@ FILESERVER_URL = "https://fileserver.krzyzanowski.dev"
 ORIGINAL_DATASET_ZIP_NAME = "Nuclear_Cataract_Original.zip"
 OURS_DATASET_ZIP_NAME = "Nuclear_Cataract_2025_12_21.zip"
 PREPARED_DATASET_ZIP_NAME = "Nuclear_Cataract_2026_05_06.zip"
+GABINET_ZIP_NAME = "Gabinet_2026_09_15.zip"
+GABINET_ZIP_PASSWORD_ENV = "GABINET_ZIP_PASSWORD"
+GABINET_DIAGNOSIS_MAPPING = {"Zdrowe": "Brak Zaćmy", "Zaćma": "Zaćma"}
+GABINET_READABLE_QUALITY = "Czytelne"
+GABINET_URL_PREFIX = "?d=gabinet/"
 ZIPGEN_TMP_DIR = DATA_BASE_PATH / "Nuclear_Cataract"
 OUTPUT_DIR = SCRIPT_DIR / ".out"
 ZIPGEN_OUTPUT_ZIP_PATH_WITHOUT_EXT = OUTPUT_DIR / "Nuclear_Cataract_Generated"
@@ -116,7 +121,8 @@ class SubsetSplitter:
 
     def get_subset_class_props(self) -> list:
         return [
-            float(counts[0]) / sum(counts) for counts in self.subsets_classes_counts
+            float(counts[0]) / (sum(counts) + SubsetSplitter.EPSILON)
+            for counts in self.subsets_classes_counts
         ]
 
     def get_subset_class_desired_props(self) -> list:
@@ -433,8 +439,11 @@ def save_patients_ours_mapping(patients_ours_map: dict[str, dict]):
         f.write(json.dumps(patients_ours_map, indent=4))
 
 
-def load_clean_labels():
-    labels_df = pd.read_json(OURS_DATASET_PATH / "labels.json")
+def load_clean_labels(dataset: DatasetKind = DatasetKind.NUCLEAR_CATARACT):
+    if dataset == DatasetKind.GABINET:
+        return load_gabinet_labels()
+
+    labels_df = pd.read_json(dataset.labels_path)
     labels_df = labels_df.dropna(subset=["choice"])
     labels_df = labels_df[
         labels_df["choice"].map(
@@ -447,6 +456,75 @@ def load_clean_labels():
     labels_df["image"] = labels_df["image"].apply(lambda x: os.path.basename(x)).copy()  # type: ignore
 
     return labels_df
+
+
+def gabinet_image_path(url: str) -> Path:
+    """Turns a Label Studio local-files url into a path relative to the dataset root"""
+    return Path(url.split(GABINET_URL_PREFIX, 1)[1])
+
+
+def convert_bmp_to_png(path: Path) -> Path:
+    """torchvision cannot decode BMP, so a PNG copy is kept next to the original"""
+    if path.suffix.lower() != ".bmp":
+        return path
+
+    png_path = path.with_suffix(".png")
+    full_png_path = DatasetKind.GABINET.root / png_path
+
+    if not full_png_path.exists():
+        Image.open(DatasetKind.GABINET.root / path).save(full_png_path)
+
+    return png_path
+
+
+def load_gabinet_labels() -> pd.DataFrame:
+    """Flattens the per visit annotations into the same shape `load_clean_labels`
+    returns, that is one row per image with `image`, `choice` and `label` (bboxes).
+
+    Only the slit lamp images are taken, the other modalities are ignored. The
+    diagnosis is given per visit, so every image of a visit shares its label.
+    """
+    with open(DatasetKind.GABINET.labels_path, encoding="utf-8") as f:
+        visits = json.load(f)
+
+    rows = []
+
+    for visit in visits:
+        choice = GABINET_DIAGNOSIS_MAPPING.get(visit.get("diagnosis"))
+
+        # Diagnoses outside of the binary problem (e.g. "Inne choroby") are dropped,
+        # the same way load_clean_labels drops them
+        if choice is None:
+            continue
+
+        for idx, image in enumerate(visit["slitlamp"]):
+            # Images the annotator did not mark as readable are dropped, the same
+            # way "Zdjęcie nieczytelne" is dropped for nuclear-cataract-ours
+            if visit.get(f"slitlamp_quality_{idx}") != GABINET_READABLE_QUALITY:
+                continue
+
+            path = convert_bmp_to_png(gabinet_image_path(image["url"]))
+            rows.append(
+                {
+                    "image": path.name,
+                    "path": str(path),
+                    "patient_id": visit["patient_id"],
+                    "choice": choice,
+                    "label": visit.get(f"slitlamp_bbox_{idx}"),
+                }
+            )
+
+    return pd.DataFrame(rows)
+
+
+def load_gabinet_packs(labels_df: pd.DataFrame) -> list[list[Path]]:
+    """One pack per visit, all of the images are of the same eye"""
+    packs = defaultdict(list)
+
+    for row in labels_df.itertuples():
+        packs[row.patient_id].append(Path(row.path))
+
+    return list(packs.values())
 
 
 def get_label_of(labels_df: pd.DataFrame, image_path: str):
@@ -582,7 +660,18 @@ def save_split_mapping(split_mapping, dest_path):
         f.write(json.dumps(split_mapping, indent=4, ensure_ascii=False))
 
 
-def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = False):
+def run_mode_initial(
+    subsets_props: list[float],
+    i_know_what_i_am_doing: bool = False,
+    dataset: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
+):
+    # The gabinet split is derived from its labels alone and is deterministic,
+    # so it can be regenerated at will
+    if dataset == DatasetKind.GABINET:
+        ensure_gabinet_deps()
+        generate_split(subsets_props, load_gabinet_packs(load_gabinet_labels()), dataset)
+        return
+
     assert i_know_what_i_am_doing
 
     DATA_BASE_PATH.mkdir(exist_ok=True)
@@ -618,21 +707,70 @@ def run_mode_initial(subsets_props: list[float], i_know_what_i_am_doing: bool = 
         patients_original_map, original_to_our
     )
     save_patients_ours_mapping(patients_ours_map)
-    labels_df = load_clean_labels()
-    datapacks = load_unlabeled_packs(patients_ours_map)
+    generate_split(subsets_props, load_unlabeled_packs(patients_ours_map), dataset)
+
+
+def split_packs(
+    counted_packs: list[dict], subsets_props: list[float]
+) -> tuple[SubsetSplitter | None, list[list]]:
+    """SubsetSplitter cannot express a degenerate split, so the subsets with a
+    zero proportion are kept out of it and stay empty.
+    """
+    non_zero = [i for i, prop in enumerate(subsets_props) if prop > 0]
+    subsets: list[list] = [[] for _ in subsets_props]
+
+    if len(non_zero) == 1:
+        subsets[non_zero[0]] = counted_packs
+        return None, subsets
+
+    ss = SubsetSplitter(counted_packs, [subsets_props[i] for i in non_zero])
+
+    for subset_idx, subset in zip(non_zero, ss.subsets):
+        subsets[subset_idx] = subset
+
+    return ss, subsets
+
+
+def generate_split(
+    subsets_props: list[float],
+    datapacks: list[list[Path]],
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
+):
+    """Splits the packs into trainval/test and writes the dataset's split.json"""
+    labels_df = load_clean_labels(dataset_kind)
     datapacks_counted = count_unlabeled_packs(datapacks, labels_df)
 
-    ss = SubsetSplitter(datapacks_counted, subsets_props)
+    ss, subsets = split_packs(datapacks_counted, subsets_props)
     sm = generate_split_mapping(
         labels_df,
-        [ss.subsets[0] + ss.subsets[1], ss.subsets[2]],
+        [subsets[0] + subsets[1], subsets[2]],
         ["trainvalSet", "testSet"],
     )
-    save_split_mapping(sm, SPLIT_JSON_PATH)
-    ss.print_stats()
+    save_split_mapping(sm, dataset_kind.split_json_path)
+
+    if ss:
+        ss.print_stats()
 
 
-def ensure_runtime_deps():
+def ensure_gabinet_deps():
+    if not DatasetKind.GABINET.root.exists():
+        DATA_BASE_PATH.mkdir(exist_ok=True)
+
+        zip_cache_path = download_files([GABINET_ZIP_NAME])[0]
+        password = os.environ.get(GABINET_ZIP_PASSWORD_ENV) or getpass(
+            "Archive password: "
+        )
+
+        # The archive is AES encrypted, which zipfile cannot read
+        with pyzipper.AESZipFile(zip_cache_path, "r") as zip_ref:
+            zip_ref.extractall(DATA_BASE_PATH, pwd=password.encode())
+
+
+def ensure_runtime_deps(dataset: DatasetKind = DatasetKind.NUCLEAR_CATARACT):
+    if dataset == DatasetKind.GABINET:
+        ensure_gabinet_deps()
+        return
+
     if not OURS_DATASET_PATH.exists() or not GENERATED_DIR_PATH.exists():
         if DATA_BASE_PATH.exists():
             data_files = list(DATA_BASE_PATH.iterdir())
@@ -653,9 +791,13 @@ def ensure_runtime_deps():
 
 
 def load_test_set(
-    should_flatten_packs: bool = False, hard_policy: HardPolicy = HardPolicy.PASSTHROUGH
+    should_flatten_packs: bool = False,
+    hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ):
-    with open(SPLIT_JSON_PATH) as split:
+    ensure_runtime_deps(dataset_kind)
+
+    with open(dataset_kind.split_json_path) as split:
         split_json = json.load(split)
 
     ts = split_json["testSet"]
@@ -672,14 +814,22 @@ def split_trainval_set(
     subsets_names: list[str] | None = None,
     should_flatten_packs: bool = False,
     hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ) -> tuple[SubsetSplitter, dict]:
-    with open(SPLIT_JSON_PATH) as split:
+    with open(dataset_kind.split_json_path) as split:
         split_mapping = json.load(split)
 
     trainval_split = split_mapping["trainvalSet"]
+
+    if not trainval_split:
+        raise RuntimeError(
+            f"trainvalSet of {dataset_kind} is empty, regenerate the split with non zero "
+            f"train and val proportions: -dataset {dataset_kind} -initial <train> <val> <test>"
+        )
+
     trainval_split = hard_policy.apply(trainval_split)
 
-    labels_df = load_clean_labels()
+    labels_df = load_clean_labels(dataset_kind)
     counted_packs = count_labeled_packs(trainval_split)
 
     ss = SubsetSplitter(counted_packs, subsets_props)
@@ -706,10 +856,11 @@ def split_mode_helper(
     print_stats: bool = False,
     should_flatten_packs: bool = False,
     hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ):
-    ensure_runtime_deps()
+    ensure_runtime_deps(dataset_kind)
     ss, sm = split_trainval_set(
-        subsets_props, subsets_names, should_flatten_packs, hard_policy
+        subsets_props, subsets_names, should_flatten_packs, hard_policy, dataset_kind
     )
 
     if save_mapping_path:
@@ -727,6 +878,7 @@ def run_mode_kfoldcv(
     print_stats: bool = False,
     should_flatten_packs: bool = False,
     hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ) -> dict:
     save_mapping_path = KFOLDCV_JSON_PATH if save_mapping else None
     return split_mode_helper(
@@ -735,6 +887,7 @@ def run_mode_kfoldcv(
         print_stats=print_stats,
         should_flatten_packs=should_flatten_packs,
         hard_policy=hard_policy,
+        dataset_kind=dataset_kind,
     )
 
 
@@ -773,6 +926,7 @@ def run_mode_trainval(
     print_stats: bool = False,
     should_flatten_packs: bool = False,
     hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ) -> dict:
     save_mapping_path = TRAINVAL_JSON_PATH if save_mapping else None
     return split_mode_helper(
@@ -782,6 +936,7 @@ def run_mode_trainval(
         print_stats,
         should_flatten_packs,
         hard_policy,
+        dataset_kind,
     )
 
 
@@ -806,8 +961,9 @@ def get_class_mapping_from_elements(elements: list, are_packs: bool = True):
 
 def run_mode_classes(
     save_mapping: bool,
+    dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
 ) -> dict:
-    with open(SPLIT_JSON_PATH) as split:
+    with open(dataset_kind.split_json_path) as split:
         split_json = json.load(split)
 
     all_packs = []
@@ -868,6 +1024,12 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-i-know-what-i-am-doing", action="store_true")
+    parser.add_argument(
+        "-dataset",
+        type=DatasetKind,
+        choices=list(DatasetKind),
+        default=DatasetKind.NUCLEAR_CATARACT,
+    )
 
     group = parser.add_mutually_exclusive_group(required=True)
 
@@ -883,10 +1045,14 @@ def main():
     args = parser.parse_args()
 
     if args.initial is not None:
-        run_mode_initial(args.initial, args.i_know_what_i_am_doing)
+        run_mode_initial(args.initial, args.i_know_what_i_am_doing, args.dataset)
     elif args.kfoldcv is not None:
         run_mode_kfoldcv(
-            args.kfoldcv, save_mapping=True, print_stats=True, should_flatten_packs=True
+            args.kfoldcv,
+            save_mapping=True,
+            print_stats=True,
+            should_flatten_packs=True,
+            dataset_kind=args.dataset,
         )
     elif args.deps is not None:
         run_mode_deps()
@@ -899,10 +1065,12 @@ def main():
             save_mapping=True,
             print_stats=True,
             should_flatten_packs=True,
+            dataset_kind=args.dataset,
         )
     elif args.classes is not None:
         run_mode_classes(
             save_mapping=True,
+            dataset_kind=args.dataset,
         )
 
 

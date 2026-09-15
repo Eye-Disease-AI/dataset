@@ -14,6 +14,8 @@ dependencies = [
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
     "pandas==2.3.3",
+    "pillow",
+    "pyzipper>=0.3.6",
     "requests>=2.33.1",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
