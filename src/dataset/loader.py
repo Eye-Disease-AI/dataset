@@ -5,11 +5,10 @@ import torchvision
 from torchvision.transforms import v2
 from tqdm import tqdm
 
+from dataset.datasets import DatasetKind
 from dataset.hard_policy import HardPolicy
 from dataset.main import (
-    OURS_DATASET_PATH,
     get_bbox_of,
-    get_class_mapping_from_elements,
     load_clean_labels,
     load_test_set,
     run_mode_classes,
@@ -47,11 +46,13 @@ class NuclearCataractDataset:
         return_paths: bool = False,
         return_bboxes: bool = False,
         hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
+        dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
     ):
         self.mode = mode
         self.cache_size = cache_size
         self.return_paths = return_paths
         self.return_bboxes = return_bboxes
+        self.dataset_kind = dataset_kind
 
         if isinstance(mode, NuclearCataractDataset.TrainValMode):
             mode.split_mapping = run_mode_trainval(
@@ -59,26 +60,25 @@ class NuclearCataractDataset:
                 mode.val_prop,
                 should_flatten_packs=True,
                 hard_policy=hard_policy,
+                dataset_kind=self.dataset_kind,
             )
-            self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.KFoldCVMode):
             mode.fold_mapping = run_mode_kfoldcv(
                 mode.k_folds,
                 should_flatten_packs=True,
                 hard_policy=hard_policy,
+                dataset_kind=self.dataset_kind,
             )
-            self.label_to_idx = run_mode_classes(False)
         elif isinstance(mode, NuclearCataractDataset.TestMode):
             mode.samples = load_test_set(  # type: ignore
                 should_flatten_packs=True,
                 hard_policy=hard_policy,
-            )
-            self.label_to_idx = get_class_mapping_from_elements(
-                mode.samples, are_packs=False
+                dataset_kind=self.dataset_kind,
             )
         else:
             raise NotImplementedError
 
+        self.label_to_idx = run_mode_classes(False, self.dataset_kind)
         self.n_classes = len(self.label_to_idx)
         self.label_names = {k for k in self.label_to_idx}
 
@@ -91,6 +91,7 @@ class NuclearCataractDataset:
                 self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
+                self.dataset_kind,
             )
         else:
             raise NotImplementedError
@@ -104,6 +105,7 @@ class NuclearCataractDataset:
                 self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
+                self.dataset_kind,
             )
         else:
             raise NotImplementedError
@@ -123,6 +125,7 @@ class NuclearCataractDataset:
                 self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
+                self.dataset_kind,
             )
         else:
             raise NotImplementedError
@@ -136,6 +139,7 @@ class NuclearCataractDataset:
                 self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
+                self.dataset_kind,
             )
         else:
             raise NotImplementedError
@@ -154,6 +158,7 @@ class NuclearCataractDataset:
                 self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
+                self.dataset_kind,
             )
         else:
             raise RuntimeError("test_set() can only be executed in TestMode")
@@ -168,6 +173,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         return_bboxes=False,
         should_cache=True,
         cache_size: int | None = None,
+        dataset_kind: DatasetKind = DatasetKind.NUCLEAR_CATARACT,
     ):
         super().__init__()
 
@@ -177,10 +183,11 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         self.should_cache = should_cache
         self.return_paths = return_paths
         self.return_bboxes = return_bboxes
+        self.dataset_kind = dataset_kind
         self.cache = {}
 
         if return_bboxes:
-            labels_df = load_clean_labels()
+            labels_df = load_clean_labels(dataset_kind)
             # Stores a list of boxes in XYXX format.
             # Each box is a list of four floats scaled from 0 to 1.
             # xmin,ymin is top left and
@@ -226,7 +233,10 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         return result
 
     def __load_img(self, path: Path) -> torch.Tensor:
-        return torchvision.io.decode_image(str(OURS_DATASET_PATH / path))
+        # converts to RGB if the images have alpha channel
+        return torchvision.io.decode_image(
+            str(self.dataset_kind.root / path), mode=torchvision.io.ImageReadMode.RGB
+        )
 
     def class_weights(self) -> torch.Tensor:
         n_classes = len(self.label_to_idx)
@@ -259,3 +269,19 @@ if __name__ == "__main__":
     ncd = NuclearCataractDataset(NuclearCataractDataset.TestMode())
     ss = ncd.test_set()
     print(ss[0])
+
+    print("Running gabinet test set mode...")
+    ncd = NuclearCataractDataset(
+        NuclearCataractDataset.TestMode(),
+        return_paths=True,
+        return_bboxes=True,
+        dataset_kind=DatasetKind.GABINET,
+    )
+    ss = ncd.test_set()
+    img, label, path, bboxes = ss[0]
+    print(img.shape, img.dtype, img.min().item(), img.max().item(), img.float().mean().item())
+    assert len(ss) > 0
+    assert img.shape[0] == 3
+    assert label in ncd.label_to_idx.values()
+    assert bboxes.shape[1] == 4
+    print(len(ss), path, bboxes)
