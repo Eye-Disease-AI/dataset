@@ -8,7 +8,9 @@ from tqdm import tqdm
 from dataset.hard_policy import HardPolicy
 from dataset.main import (
     OURS_DATASET_PATH,
+    get_bbox_of,
     get_class_mapping_from_elements,
+    load_clean_labels,
     load_test_set,
     run_mode_classes,
     run_mode_kfoldcv,
@@ -43,11 +45,13 @@ class NuclearCataractDataset:
         mode: KFoldCVMode | TrainValMode | TestMode,
         cache_size: int | None = None,
         return_paths: bool = False,
+        return_bboxes: bool = False,
         hard_policy: HardPolicy = HardPolicy.PASSTHROUGH,
     ):
         self.mode = mode
         self.cache_size = cache_size
         self.return_paths = return_paths
+        self.return_bboxes = return_bboxes
 
         if isinstance(mode, NuclearCataractDataset.TrainValMode):
             mode.split_mapping = run_mode_trainval(
@@ -84,6 +88,7 @@ class NuclearCataractDataset:
                 self.mode.split_mapping["train"],
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -96,6 +101,7 @@ class NuclearCataractDataset:
                 self.mode.split_mapping["val"],
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -114,6 +120,7 @@ class NuclearCataractDataset:
                 samples,
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -126,6 +133,7 @@ class NuclearCataractDataset:
                 self.mode.fold_mapping[str(fold_idx)],
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -143,6 +151,7 @@ class NuclearCataractDataset:
                 self.mode.samples,
                 self.label_to_idx,
                 self.return_paths,
+                self.return_bboxes,
                 self.cache_size is not None,
                 self.cache_size,
             )
@@ -156,6 +165,7 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         samples,
         label_to_idx: dict[str, int],
         return_paths=False,
+        return_bboxes=False,
         should_cache=True,
         cache_size: int | None = None,
     ):
@@ -166,7 +176,23 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         self.idx_to_label = {v: k for k, v in self.label_to_idx.items()}
         self.should_cache = should_cache
         self.return_paths = return_paths
+        self.return_bboxes = return_bboxes
         self.cache = {}
+
+        if return_bboxes:
+            labels_df = load_clean_labels()
+            # Stores a list of boxes in XYXX format.
+            # Each box is a list of four floats scaled from 0 to 1.
+            # xmin,ymin is top left and
+            # xmax,ymax is bottom right
+            # Converted to a torch tensor for performance
+            self.bboxes = [
+                torch.tensor(
+                    get_bbox_of(labels_df, Path(s["path"]).name),
+                    dtype=torch.float32,
+                ).reshape(-1, 4)
+                for s in self.samples
+            ]
 
         resize = v2.Resize(cache_size) if cache_size else None
 
@@ -194,6 +220,9 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
         if self.return_paths:
             result.append(sample["path"])
 
+        if self.return_bboxes:
+            result.append(self.bboxes[idx])
+
         return result
 
     def __load_img(self, path: Path) -> torch.Tensor:
@@ -217,7 +246,9 @@ class NuclearCataractSubset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     print("Running smoke test...")
     ncd = NuclearCataractDataset(
-        NuclearCataractDataset.TrainValMode(0.8, 0.2), cache_size=224, return_paths=True
+        NuclearCataractDataset.TrainValMode(0.8, 0.2),
+        cache_size=224,
+        return_paths=True
     )
     ss = ncd.train_set()
     print(ss[0])
